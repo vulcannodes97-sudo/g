@@ -40,14 +40,13 @@ db_append() {
 
 db_find() {
   local lic="$1"
-  awk -F',' -v L="$lic" 'NR>1 && $1==L {print; exit}' "$DB_FILE" || true
+  awk -F',' -v L="$lic" 'NR>1 && $1==L {print; exit}' "$DB_FILE"
 }
 
 db_update() {
   local lic="$1"
   local newline="$2"
-  local tmp
-  tmp=$(mktemp)
+  local tmp=$(mktemp)
 
   (
     flock -n 9 || { sleep 0.2; flock 9; }
@@ -63,52 +62,6 @@ auto_run() {
   bash <(curl -s https://ptero.jishnu.fun)
 }
 
-validate_license() {
-  local lic="$1"
-  local rec
-  rec=$(db_find "$lic")
-
-  if [ -z "$rec" ]; then
-    discord_notify "Invalid License Attempt" "License found nahi hua."
-    exit 1
-  fi
-
-  IFS=',' read -r lic_a created assigned used meta <<<"$rec"
-  local host
-  host="$(hostname -f || hostname)"
-
-  # 15 minute expiry check
-  local now_ts created_ts
-  now_ts=$(date +%s)
-  created_ts=$(date -d "$created" +%s)
-  local diff=$((now_ts - created_ts))
-
-  if [ $diff -gt 900 ]; then
-    discord_notify "License Expired" "License 15 minutes se purana ho chuka hai."
-    exit 1
-  fi
-
-  # first time assignment
-  if [ -z "$assigned" ]; then
-    local now
-    now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    db_update "$lic" "${lic},${created},${host},${now},${meta}"
-    send_vps_info "$lic"
-    auto_run
-    exit 0
-  fi
-
-  # same VPS reuse
-  if [ "$assigned" = "$host" ]; then
-    send_vps_info "$lic"
-    auto_run
-    exit 0
-  fi
-
-  discord_notify "License Denied" "License kisi aur VPS pe assigned hai."
-  exit 1
-}
-
 send_vps_info() {
   local lic="$1"
 
@@ -122,22 +75,65 @@ send_vps_info() {
 "**License:** \`${lic}\`
 **Host:** $host
 **OS:** $os
-**CPU Cores:** $cpu
+**CPU:** $cpu Cores
 **RAM:** $ram
-**Public IP:** $ip"
+**IP:** $ip"
 }
 
-######## AUTO MODE START ########
+validate_license() {
+  local lic="$1"
+  local rec
+  rec=$(db_find "$lic")
 
-# 1) Auto-generate license silently
+  if [ -z "$rec" ]; then
+    echo "Galat License!"
+    exit 1
+  fi
+
+  IFS=',' read -r lic_a created assigned used meta <<<"$rec"
+  local host=$(hostname -f)
+
+  # expiry (15 min)
+  local now_ts=$(date +%s)
+  local created_ts=$(date -d "$created" +%s)
+  local diff=$((now_ts - created_ts))
+
+  if [ $diff -gt 900 ]; then
+    echo "License expired!"
+    discord_notify "License Expired" "License \`${lic}\` 15 min purana ho gaya."
+    exit 1
+  fi
+
+  if [ -z "$assigned" ]; then
+    local now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    db_update "$lic" "${lic},${created},${host},${now},${meta}"
+    send_vps_info "$lic"
+    auto_run
+    exit 0
+  fi
+
+  if [ "$assigned" = "$host" ]; then
+    send_vps_info "$lic"
+    auto_run
+    exit 0
+  fi
+
+  echo "License kisi aur VPS ka hai!"
+  exit 1
+}
+
+### AUTO FLOW ###
+
+# Step 1: generate license
 newlic=$(generate_license)
 created=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 db_append "${newlic},${created},,,auto"
 
-# 2) Send license to Discord only
+# Step 2: send license to discord (VPS user cannot see it)
 discord_notify "New License Generated" "License: \`${newlic}\`\nValid for 15 minutes."
 
-# 3) Auto-validate on this VPS silently
-validate_license "$newlic"
+# Step 3: ask user for license (user MUST input)
+read -p "Apna License Enter Karo: " userlic
 
-exit 0
+# Step 4: validate (will only run installer if license matches)
+validate_license "$userlic"
