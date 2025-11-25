@@ -17,7 +17,6 @@ fi
 discord_notify() {
   local title="$1"
   local description="$2"
-
   curl -s -H "Content-Type: application/json" \
   -X POST \
   -d "{\"embeds\":[{\"title\":\"$title\",\"description\":\"$description\",\"color\":3447003}]}" \
@@ -26,7 +25,7 @@ discord_notify() {
 
 generate_license() {
   local hex
-  hex=$(openssl rand -hex 16 2>/dev/null || head -c16 /dev/urandom | xxd -p -c16)
+  hex=$(openssl rand -hex 16)
   echo "${hex:0:4}-${hex:4:4}-${hex:8:4}-${hex:12:4}"
 }
 
@@ -40,14 +39,13 @@ db_append() {
 
 db_find() {
   local lic="$1"
-  awk -F',' -v L="$lic" 'NR>1 && $1==L {print; exit}' "$DB_FILE"
+  awk -F',' -v L="$lic" 'NR>1 && $1==L {print $0; exit}' "$DB_FILE"
 }
 
 db_update() {
   local lic="$1"
   local newline="$2"
   local tmp=$(mktemp)
-
   (
     flock -n 9 || { sleep 0.2; flock 9; }
     awk -F',' -v L="$lic" -v NL="$newline" '
@@ -75,7 +73,7 @@ send_vps_info() {
 "**License:** \`${lic}\`
 **Host:** $host
 **OS:** $os
-**CPU:** $cpu Cores
+**CPU:** $cpu
 **RAM:** $ram
 **IP:** $ip"
 }
@@ -93,17 +91,18 @@ validate_license() {
   IFS=',' read -r lic_a created assigned used meta <<<"$rec"
   local host=$(hostname -f)
 
-  # expiry (15 min)
+  # 15-minute expiry check
   local now_ts=$(date +%s)
   local created_ts=$(date -d "$created" +%s)
   local diff=$((now_ts - created_ts))
 
   if [ $diff -gt 900 ]; then
-    echo "License expired!"
-    discord_notify "License Expired" "License \`${lic}\` 15 min purana ho gaya."
+    echo "License expire!"
+    discord_notify "License Expired" "License \`${lic}\` 15 minute purana ho chuka."
     exit 1
   fi
 
+  # assign first time
   if [ -z "$assigned" ]; then
     local now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     db_update "$lic" "${lic},${created},${host},${now},${meta}"
@@ -118,22 +117,26 @@ validate_license() {
     exit 0
   fi
 
-  echo "License kisi aur VPS ka hai!"
+  echo "License kisi aur server ka hai!"
   exit 1
 }
 
 ### AUTO FLOW ###
 
-# Step 1: generate license
+# 1) Generate license silently
 newlic=$(generate_license)
 created=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 db_append "${newlic},${created},,,auto"
 
-# Step 2: send license to discord (VPS user cannot see it)
-discord_notify "New License Generated" "License: \`${newlic}\`\nValid for 15 minutes."
+# 2) Send to Discord (user cannot see)
+discord_notify "New License Generated" \
+"License: \`${newlic}\`\nValid for 15 minutes."
 
-# Step 3: ask user for license (user MUST input)
-read -p "Apna License Enter Karo: " userlic
+# 3) FORCE LICENSE INPUT — MUST ENTER
+userlic=""
+while [[ -z "$userlic" ]]; do
+  read -p "License Enter Karo: " userlic
+done
 
-# Step 4: validate (will only run installer if license matches)
+# 4) Validate
 validate_license "$userlic"
