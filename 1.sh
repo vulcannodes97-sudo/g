@@ -2,11 +2,8 @@
 
 # ============================================
 # LXC/LXD Container Manager
-# Version: 4.0 - Windows & Linux Support
+# Version: 6.0 - Windows & Linux with VNC
 # ============================================
-
-
-# if you use Ubuntu
 
 
 # Color codes for output
@@ -19,6 +16,11 @@ CYAN='\033[0;36m'
 WHITE='\033[1;37m'
 NC='\033[0m' # No Color
 
+# Global variables
+declare -gA DETECTED_IMAGES
+declare -gA MENU_OPTIONS
+declare -g CONTAINER_COUNT=0
+
 # Function to print colored output
 print_color() {
     local color=$1
@@ -30,296 +32,415 @@ print_color() {
 print_header() {
     clear
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║            LXC/LXD Container Manager v4.0                    ║"
-    echo "║          Windows & Linux Support with VNC                    ║"
+    echo "║            LXC/LXD Container Manager v6.0                    ║"
+    echo "║         Windows 10/11 & Linux with VNC/RDP                   ║"
     echo "║               Mode BY - Nobita                               ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo
 }
 
-# Default image database (fallback)
+# Default image database (fallback with Windows)
 declare -A DEFAULT_IMAGES=(
-    ["1"]="ubuntu:22.04|Ubuntu 22.04 Jammy"
-    ["2"]="almalinux/9|AlmaLinux 9"
-    ["3"]="centos/stream-9|CentOS Stream 9"
-    ["4"]="ubuntu:24.04|Ubuntu 24.04 Noble"
-    ["5"]="rockylinux/9|Rocky Linux 9"
-    ["6"]="fedora/40|Fedora 40"
-    ["7"]="debian/11|Debian 11 Bullseye"
-    ["8"]="debian/trixie-daily|Debian 13 Trixie"
-    ["9"]="debian/12|Debian 12 Bookworm"
-    ["10"]="windows/11|Windows 11 (VM)"
-    ["11"]="windows/10|Windows 10 (VM)"
-    ["12"]="ubuntu/focal/cloud|Ubuntu 20.04 (Desktop)"
+    ["ubuntu:22.04"]="Ubuntu 22.04 Jammy"
+    ["ubuntu:24.04"]="Ubuntu 24.04 Noble"
+    ["debian/12"]="Debian 12 Bookworm"
+    ["debian/11"]="Debian 11 Bullseye"
+    ["almalinux/9"]="AlmaLinux 9"
+    ["rockylinux/9"]="Rocky Linux 9"
+    ["centos/stream-9"]="CentOS Stream 9"
+    ["fedora/40"]="Fedora 40"
+    ["archlinux"]="Arch Linux"
+    ["opensuse/tumbleweed"]="openSUSE Tumbleweed"
+    ["windows-10"]="Windows 10 Professional (Manual Setup)"
+    ["windows-11"]="Windows 11 Professional (Manual Setup)"
 )
 
-# Windows-specific images (需要手动导入)
-declare -A WINDOWS_IMAGES=(
-    ["win11"]="Windows 11 Professional"
-    ["win10"]="Windows 10 Professional"
-    ["win11-enterprise"]="Windows 11 Enterprise"
-    ["win10-enterprise"]="Windows 10 Enterprise"
-    ["win2022"]="Windows Server 2022"
-    ["win2019"]="Windows Server 2019"
-)
-
-# Function to install dependencies
-install_dependencies() {
+# Function to show image selection menu
+show_image_menu() {
+    local total_images=$1
+    
     print_header
-    print_color "$CYAN" "🔧 Installing Dependencies..."
+    print_color "$CYAN" "📦 Available Container Images"
     echo "══════════════════════════════════════════════════════════════"
-    
-    # Detect distribution
-    if [[ -f /etc/os-release ]]; then
-        source /etc/os-release
-        OS_NAME=$ID
-    else
-        print_color "$RED" "❌ Cannot detect OS distribution!"
-        exit 1
-    fi
-    
-    print_color "$BLUE" "📊 Detected: $PRETTY_NAME"
     echo
     
-    case $OS_NAME in
-        ubuntu|debian)
-            print_color "$GREEN" "📦 Installing for Ubuntu/Debian..."
-            echo
-            
-            # Update package lists
-            print_color "$CYAN" "🔄 Updating package lists..."
-            sudo apt update -y
-            
-            # Install LXC
-            print_color "$CYAN" "📥 Installing LXC..."
-            sudo apt install -y lxc lxc-utils lxc-templates bridge-utils uidmap
-            
-            # Install virtualization tools for Windows VMs
-            print_color "$CYAN" "💻 Installing virtualization tools..."
-            sudo apt install -y qemu-kvm libvirt-daemon-system libvirt-clients virtinst virt-manager bridge-utils
-            
-            # Install VNC tools for remote access
-            print_color "$CYAN" "👁️  Installing VNC tools..."
-            sudo apt install -y tigervnc-viewer novnc websockify
-            
-            # Install and configure snapd for LXD
-            if ! command -v snap &> /dev/null; then
-                print_color "$CYAN" "📦 Installing snapd..."
-                sudo apt install -y snapd
-                sudo systemctl enable --now snapd.socket
-                sudo ln -s /var/lib/snapd/snap /snap 2>/dev/null || true
-                echo "⚠️  Please log out and log back in for snap to work properly"
-            fi
-            
-            # Install LXD (latest version for Windows support)
-            print_color "$CYAN" "🚀 Installing LXD 5.0 or later..."
-            sudo snap install lxd --channel=latest/stable
-            
-            # Add user to necessary groups
-            print_color "$CYAN" "👤 Adding user to groups..."
-            sudo usermod -aG lxd $USER
-            sudo usermod -aG kvm $USER
-            sudo usermod -aG libvirt $USER
-            
-            # Initialize LXD with VM support
-            print_color "$CYAN" "⚙️  Initializing LXD..."
-            echo "Setting up LXD with virtualization support..."
-            sudo lxd init --auto --storage-backend=zfs --storage-create-loop=20
-            
-            # Enable VM support
-            print_color "$CYAN" "💻 Enabling VM support..."
-            sudo lxc config set core.https_address "[::]:8443"
-            sudo lxc config set core.trust_password password
-            
-            # Start LXD service
-            print_color "$CYAN" "▶️  Starting LXD service..."
-            sudo systemctl start snap.lxd.daemon 2>/dev/null || sudo systemctl start lxd 2>/dev/null
-            
-            # Enable KVM
-            print_color "$CYAN" "🔧 Enabling KVM..."
-            sudo modprobe kvm
-            sudo modprobe kvm_intel 2>/dev/null || sudo modprobe kvm_amd 2>/dev/null
-            
-            print_color "$GREEN" "✅ Dependencies installed successfully!"
-            echo
-            print_color "$YELLOW" "⚠️  IMPORTANT: Please log out and log back in for group changes!"
-            print_color "$YELLOW" "   Then run this script again."
-            print_color "$CYAN" "💡 For Windows VMs, you'll need to import Windows ISO images."
-            ;;
-        *)
-            print_color "$RED" "❌ Unsupported OS: $OS_NAME"
-            print_color "$YELLOW" "📋 Manual installation required:"
-            echo "For Ubuntu/Debian:"
-            echo "  sudo apt install lxc lxc-utils bridge-utils snapd qemu-kvm virt-manager"
-            echo "  sudo snap install lxd"
-            echo "  sudo usermod -aG lxd,kvm,libvirt \$USER"
-            echo "  sudo lxd init --auto"
-            ;;
-    esac
+    local index=1
+    declare -A local_menu_options
     
-    read -p "⏎ Press Enter to continue..."
-    exit 0
-}
-
-# 添加新函数：检测Windows镜像
-detect_windows_images() {
-    print_color "$PURPLE" "🪟 Searching for Windows images..."
-    
-    local win_count=0
-    local win_images=$(lxc image list images: 2>/dev/null | grep -i windows | head -10)
-    
-    if [[ -n "$win_images" ]]; then
-        while IFS= read -r line; do
-            local image_name=$(echo "$line" | awk -F'|' '{print $2}' | xargs)
-            local description=$(echo "$line" | awk -F'|' '{print $3}' | xargs)
-            
-            if [[ -n "$image_name" ]]; then
-                ((win_count++))
-                # 添加到AVAILABLE_IMAGES
-                local key=$((100 + win_count))  # 100+ 给Windows保留
-                AVAILABLE_IMAGES["$key"]="images:$image_name|$description"
-            fi
-        done <<< "$win_images"
-    fi
-    
-    # 如果没有找到，添加Windows占位符
-    if [[ $win_count -eq 0 ]]; then
-        print_color "$YELLOW" "⚠️  No Windows images found. You'll need to import them manually."
-        echo
-        print_color "$CYAN" "💡 To add Windows images:"
-        echo "  1. Download Windows ISO from Microsoft"
-        echo "  2. Use: lxc image import /path/to/windows.iso --alias windows10"
-        echo "  3. Or use cloud images if available"
-    else
-        print_color "$GREEN" "✅ Found $win_count Windows images"
-    fi
-}
-
-# 修改detect_available_images函数
-detect_available_images() {
-    print_color "$CYAN" "🔍 Scanning for available images..."
+    # Show Windows images first (special section)
+    print_color "$PURPLE" "🪟 Windows Images (VM only):"
     echo
     
-    # Clear previous image list
-    declare -gA AVAILABLE_IMAGES
-    AVAILABLE_IMAGES=()
-    
-    # List of remotes to check
-    local remotes=("images" "ubuntu" "debian" "fedora" "centos" "almalinux" "rockylinux")
-    local image_count=0
-    
-    # Try to get images from remotes
-    for remote in "${remotes[@]}"; do
-        print_color "$BLUE" "📡 Checking remote: $remote"
-        
-        # Try to list images from this remote
-        local remote_images=$(timeout 15 lxc image list "$remote:" 2>/dev/null | grep -E "^\| [a-zA-Z0-9/:-]+ \|" | head -15)
-        
-        if [[ -n "$remote_images" ]]; then
-            while IFS= read -r line; do
-                # Extract image name from line
-                local image_name=$(echo "$line" | awk -F'|' '{print $2}' | xargs)
-                local description=$(echo "$line" | awk -F'|' '{print $3}' | xargs | cut -c1-50)
-                
-                if [[ -n "$image_name" && ! "$image_name" =~ "ALIAS" && ! "$image_name" =~ "FINGERPRINT" ]]; then
-                    ((image_count++))
-                    AVAILABLE_IMAGES["$image_count"]="$remote:$image_name|$description"
-                    echo "  ✅ Found: $remote:$image_name"
-                fi
-            done <<< "$remote_images"
-        else
-            echo "  ⚠️  No images found or remote not accessible"
+    for image_key in "${!DEFAULT_IMAGES[@]}"; do
+        if [[ "$image_key" == "windows-10" || "$image_key" == "windows-11" ]]; then
+            local_menu_options[$index]="$image_key"
+            print_color "$PURPLE" "  $index) ${DEFAULT_IMAGES[$image_key]}"
+            print_color "$BLUE" "     💻 Requires: 4GB+ RAM, 50GB+ Disk, Manual ISO setup"
+            echo
+            ((index++))
         fi
     done
     
-    # 检测Windows镜像
-    detect_windows_images
-    
-    # If no images found, use defaults
-    if [[ ${#AVAILABLE_IMAGES[@]} -eq 0 ]]; then
-        print_color "$YELLOW" "⚠️  Could not detect images automatically. Using defaults..."
-        for key in "${!DEFAULT_IMAGES[@]}"; do
-            AVAILABLE_IMAGES["$key"]="${DEFAULT_IMAGES[$key]}"
+    # Show detected Linux images
+    if [[ ${#DETECTED_IMAGES[@]} -gt 0 ]]; then
+        print_color "$GREEN" "🔍 Auto-Detected Linux Images:"
+        echo
+        
+        for image_key in "${!DETECTED_IMAGES[@]}"; do
+            local_menu_options[$index]="$image_key"
+            print_color "$GREEN" "  $index) ${DETECTED_IMAGES[$image_key]}"
+            print_color "$BLUE" "     📦 Image: $image_key"
+            echo
+            ((index++))
         done
     fi
     
+    # Show other Linux images
+    print_color "$YELLOW" "📚 Other Linux Images:"
     echo
-    print_color "$GREEN" "✅ Found ${#AVAILABLE_IMAGES[@]} available images"
-    sleep 1
+    
+    for image_key in "${!DEFAULT_IMAGES[@]}"; do
+        # Skip Windows and already shown images
+        if [[ "$image_key" == "windows-10" || "$image_key" == "windows-11" ]] || \
+           [[ -n "${DETECTED_IMAGES[$image_key]}" ]]; then
+            continue
+        fi
+        
+        local_menu_options[$index]="$image_key"
+        print_color "$YELLOW" "  $index) ${DEFAULT_IMAGES[$image_key]}"
+        print_color "$BLUE" "     📦 Image: $image_key"
+        echo
+        ((index++))
+    done
+    
+    echo "══════════════════════════════════════════════════════════════"
+    echo "  0) ↩️  Back to Main Menu"
+    echo "  r) 🔄 Refresh Image List"
+    echo "  s) 🔍 Search Images"
+    echo "  w) 🪟 Windows Setup Guide"
+    echo
+    
+    # Store menu options globally for selection
+    MENU_OPTIONS=()
+    for i in $(seq 1 $((index-1))); do
+        MENU_OPTIONS[$i]="${local_menu_options[$i]}"
+    done
+    
+    return $((index-1))
 }
 
-# 添加新函数：安装VNC服务
-install_vnc_service() {
+# Smart function to detect available images
+detect_available_images() {
+    print_header
+    print_color "$CYAN" "🔍 Smart Image Detection"
+    echo "══════════════════════════════════════════════════════════════"
+    echo
+    
+    # Clear previous detected images
+    DETECTED_IMAGES=()
+    
+    local total_found=0
+    
+    print_color "$BLUE" "📡 Checking LXD image remotes..."
+    echo
+    
+    # Check if LXC is available
+    if ! command -v lxc &> /dev/null; then
+        print_color "$RED" "❌ LXC is not installed!"
+        print_color "$YELLOW" "Please install LXC/LXD first (option 8 in main menu)"
+        read -p "⏎ Press Enter to continue..."
+        return 0
+    fi
+    
+    # Method 1: Check if LXD is initialized
+    if ! lxc cluster list 2>&1 | grep -q "no such file or directory" && \
+       ! lxc cluster list 2>&1 | grep -q "not initialized"; then
+        
+        print_color "$GREEN" "✅ LXD is initialized. Checking images..."
+        
+        # Try to list local images
+        print_color "$CYAN" "📥 Checking local images..."
+        local local_images=$(timeout 5 lxc image list --format csv 2>/dev/null)
+        
+        if [[ -n "$local_images" ]]; then
+            while IFS= read -r line; do
+                IFS=',' read -r fingerprint alias description _ <<< "$line"
+                
+                if [[ -n "$alias" && "$alias" != "ALIAS" ]]; then
+                    ((total_found++))
+                    DETECTED_IMAGES["$alias"]="${description:-$alias}"
+                    print_color "$GREEN" "  ✅ Local: $alias"
+                fi
+            done <<< "$local_images"
+        fi
+        
+        # Method 2: Try to list from default remote (images:)
+        print_color "$CYAN" "🌐 Checking cloud images..."
+        
+        local cloud_images=$(timeout 15 lxc image list images: --format csv 2>/dev/null | head -20)
+        
+        if [[ -n "$cloud_images" ]]; then
+            while IFS= read -r line; do
+                IFS=',' read -r fingerprint alias description _ <<< "$line"
+                
+                if [[ -n "$alias" && "$alias" != "ALIAS" && ! "$alias" =~ "fingerprint" ]]; then
+                    ((total_found++))
+                    local full_alias="images:$alias"
+                    DETECTED_IMAGES["$full_alias"]="${description:-$alias}"
+                    print_color "$GREEN" "  ✅ Cloud: $full_alias"
+                fi
+            done <<< "$cloud_images"
+        else
+            print_color "$YELLOW" "  ⚠️  Could not fetch cloud images"
+            print_color "$CYAN" "    Trying common images directly..."
+            
+            # Test common images
+            local common_images=(
+                "ubuntu:22.04"
+                "ubuntu:24.04"
+                "debian/12"
+                "centos/stream-9"
+                "almalinux/9"
+                "rockylinux/9"
+                "archlinux"
+            )
+            
+            for image in "${common_images[@]}"; do
+                if timeout 10 lxc image show "images:$image" 2>/dev/null | grep -q "architecture"; then
+                    ((total_found++))
+                    DETECTED_IMAGES["images:$image"]="$image"
+                    print_color "$GREEN" "    ✅ Available: $image"
+                fi
+            done
+        fi
+    else
+        print_color "$YELLOW" "⚠️  LXD is not initialized or not ready"
+        print_color "$CYAN" "💡 Please run 'lxd init --auto' first"
+    fi
+    
+    # Always add Windows options (they need manual setup)
+    DETECTED_IMAGES["windows-10"]="Windows 10 Professional (Manual Setup)"
+    DETECTED_IMAGES["windows-11"]="Windows 11 Professional (Manual Setup)"
+    total_found=$((total_found + 2))
+    
+    echo
+    if [[ $total_found -gt 0 ]]; then
+        print_color "$GREEN" "✅ Found $total_found available images"
+    else
+        print_color "$YELLOW" "⚠️  No images detected automatically"
+        print_color "$CYAN" "💡 Using default image list"
+    fi
+    
+    # Update container count
+    if command -v lxc &> /dev/null; then
+        CONTAINER_COUNT=$(lxc list --format csv 2>/dev/null | wc -l)
+    fi
+    
+    return $total_found
+}
+
+# Function to install VNC in Linux container
+install_vnc_linux() {
     local container_name=$1
     local vnc_password=$2
     local vnc_port=$3
     
-    print_color "$CYAN" "👁️  Configuring VNC for $container_name..."
+    print_color "$CYAN" "👁️  Installing VNC on Linux container..."
     
-    # 对于Linux容器
-    if [[ "$container_name" =~ ubuntu|debian|centos|fedora ]]; then
-        # 创建VNC安装脚本
-        cat > /tmp/install_vnc.sh << 'EOF'
-#!/bin/bash
-# Install VNC Server
-apt update && apt install -y tightvncserver xfce4 xfce4-goodies firefox || \
-yum install -y tigervnc-server @xfce firefox || \
-dnf install -y tigervnc-server @xfce-desktop firefox
-
-# Create VNC password
-mkdir -p ~/.vnc
-echo -e "$VNC_PASSWORD\n$VNC_PASSWORD\nn" | vncpasswd ~/.vnc/passwd
-chmod 600 ~/.vnc/passwd
-
-# Create VNC startup script
-cat > ~/.vnc/xstartup << 'VNC_EOF'
-#!/bin/bash
-xrdb $HOME/.Xresources
-startxfce4 &
-VNC_EOF
-
-chmod +x ~/.vnc/xstartup
-
-# Start VNC server on specified port
-vncserver :1 -geometry 1280x800 -depth 24 -localhost no
-echo "VNC server started on port 5901"
-EOF
-        
-        # 复制并执行脚本
-        lxc file push /tmp/install_vnc.sh $container_name/tmp/
-        lxc exec $container_name -- bash -c "export VNC_PASSWORD='$vnc_password' && bash /tmp/install_vnc.sh"
-        
-    # 对于Windows容器（VM）
-    elif [[ "$container_name" =~ win || "$container_name" =~ windows ]]; then
-        # Windows VM通常内置RDP，我们配置SPICE或VNC
-        print_color "$BLUE" "💻 Windows VM detected - using SPICE for better performance"
-        
-        # 配置SPICE显示
-        lxc config device add $container_name spice serial= spice.agent.enabled=true \
-            listen=type=address,address=0.0.0.0,port=5900
-        
-        # 添加VirtIO显卡
-        lxc config device add $container_name video-gpu gpu \
-            driver=virtio-gpu accel3d=true
-        
-        print_color "$GREEN" "✅ SPICE/VNC configured for Windows VM"
-        print_color "$CYAN" "🔗 Connect using:"
-        echo "  - Remote Desktop (RDP): Connect to container IP"
-        echo "  - SPICE: Use virt-viewer or similar client"
-        echo "  - VNC: Connect to host:$vnc_port"
+    # Detect container OS
+    local os_type="unknown"
+    if lxc exec "$container_name" -- bash -c "command -v apt" &>/dev/null; then
+        os_type="debian"
+    elif lxc exec "$container_name" -- bash -c "command -v yum" &>/dev/null; then
+        os_type="redhat"
+    elif lxc exec "$container_name" -- bash -c "command -v dnf" &>/dev/null; then
+        os_type="fedora"
+    elif lxc exec "$container_name" -- bash -c "command -v pacman" &>/dev/null; then
+        os_type="arch"
     fi
     
-    rm -f /tmp/install_vnc.sh
+    case $os_type in
+        debian)
+            # Install for Debian/Ubuntu
+            lxc exec "$container_name" -- bash -c "
+                apt update && apt install -y tightvncserver xfce4 xfce4-goodies firefox
+                mkdir -p ~/.vnc
+                echo '$vnc_password' | vncpasswd -f > ~/.vnc/passwd
+                chmod 600 ~/.vnc/passwd
+                
+                cat > ~/.vnc/xstartup << 'EOF'
+#!/bin/bash
+xrdb \$HOME/.Xresources
+startxfce4 &
+EOF
+                chmod +x ~/.vnc/xstartup
+                echo 'VNC server installed. Start with: vncserver :1 -geometry 1280x800' > /tmp/vnc-info.txt
+            "
+            ;;
+        redhat|fedora)
+            # Install for RHEL/CentOS/Fedora
+            lxc exec "$container_name" -- bash -c "
+                yum install -y tigervnc-server @xfce firefox || dnf install -y tigervnc-server @xfce-desktop firefox
+                mkdir -p ~/.vnc
+                echo '$vnc_password' | vncpasswd -f > ~/.vnc/passwd
+                chmod 600 ~/.vnc/passwd
+                echo 'VNC server installed.' > /tmp/vnc-info.txt
+            "
+            ;;
+        arch)
+            # Install for Arch Linux
+            lxc exec "$container_name" -- bash -c "
+                pacman -Syu --noconfirm tigervnc xfce4 xfce4-goodies firefox
+                mkdir -p ~/.vnc
+                echo '$vnc_password' | vncpasswd -f > ~/.vnc/passwd
+                chmod 600 ~/.vnc/passwd
+                echo 'VNC server installed.' > /tmp/vnc-info.txt
+            "
+            ;;
+        *)
+            print_color "$YELLOW" "⚠️  Unknown OS type. VNC installation may require manual setup."
+            return 1
+            ;;
+    esac
+    
+    # Configure VNC port in container
+    lxc config device add "$container_name" vncproxy proxy \
+        listen="tcp:0.0.0.0:$vnc_port" \
+        connect="tcp:127.0.0.1:5901" 2>/dev/null || true
+    
+    print_color "$GREEN" "✅ VNC server installed in container"
+    print_color "$CYAN" "💡 To start VNC: lxc exec $container_name -- vncserver :1"
+    print_color "$CYAN" "💡 Connect via: VNC viewer to host port $vnc_port"
+    
+    return 0
 }
 
-# 修改create_container函数，添加VNC配置选项
+# Function to configure Windows VM for RDP
+configure_windows_rdp() {
+    local vm_name=$1
+    
+    print_color "$PURPLE" "🪟 Configuring Windows VM for RDP..."
+    
+    # Add VirtIO devices for better performance
+    lxc config device add "$vm_name" root disk path=/ pool=default 2>/dev/null || true
+    
+    # Configure display (SPICE for better Windows support)
+    lxc config device add "$vm_name" spice serial= spice.agent.enabled=true \
+        listen=type=address,address=0.0.0.0,port=5900 2>/dev/null || true
+    
+    # Add GPU support
+    lxc config device add "$vm_name" gpu gpu \
+        driver=virtio-gpu accel3d=true 2>/dev/null || true
+    
+    # Enable RDP port forwarding
+    lxc config device add "$vm_name" rdpproxy proxy \
+        listen="tcp:0.0.0.0:3389" \
+        connect="tcp:127.0.0.1:3389" 2>/dev/null || true
+    
+    print_color "$GREEN" "✅ Windows VM configured for remote access"
+    print_color "$CYAN" "💡 Remote Desktop (RDP): Connect to host port 3389"
+    print_color "$CYAN" "💡 SPICE/VNC: Connect to host port 5900"
+    print_color "$YELLOW" "⚠️  Note: You need to enable RDP in Windows settings"
+}
+
+# Function to create Windows VM from ISO
+create_windows_vm_from_iso() {
+    local vm_name=$1
+    local windows_version=$2
+    
+    print_header
+    print_color "$PURPLE" "🪟 Windows VM Creation Wizard"
+    echo "══════════════════════════════════════════════════════════════"
+    echo
+    
+    print_color "$YELLOW" "📋 Windows VM Requirements:"
+    echo "  • 4GB+ RAM (8GB recommended)"
+    echo "  • 50GB+ disk space"
+    echo "  • Windows ISO file"
+    echo "  • Virtualization enabled in BIOS"
+    echo
+    
+    read -p "Do you have Windows ISO ready? (y/N): " has_iso
+    if [[ ! "$has_iso" =~ ^[Yy]$ ]]; then
+        print_color "$RED" "❌ You need Windows ISO to create Windows VM"
+        print_color "$CYAN" "💡 Download Windows ISO from Microsoft website"
+        read -p "⏎ Press Enter to continue..."
+        return 1
+    fi
+    
+    read -p "📁 Path to Windows ISO: " iso_path
+    if [[ ! -f "$iso_path" ]]; then
+        print_color "$RED" "❌ ISO file not found: $iso_path"
+        read -p "⏎ Press Enter to continue..."
+        return 1
+    fi
+    
+    # Get resources
+    echo
+    print_color "$CYAN" "⚙️  VM Resource Configuration:"
+    read -p "💾 Disk size (default: 50GB): " disk_size
+    disk_size=${disk_size:-50GB}
+    
+    read -p "🧠 Memory (default: 4GB): " memory
+    memory=${memory:-4GB}
+    
+    read -p "⚡ CPU cores (default: 2): " cpu_count
+    cpu_count=${cpu_count:-2}
+    
+    # Create empty VM
+    print_color "$BLUE" "🔄 Creating Windows VM..."
+    lxc init images:empty --vm "$vm_name" 2>/dev/null || lxc init --vm "$vm_name" --empty
+    
+    # Attach ISO as CD-ROM
+    lxc config device add "$vm_name" iso disk \
+        source="$iso_path" \
+        boot.priority=10
+    
+    # Configure resources
+    lxc config set "$vm_name" limits.cpu="$cpu_count"
+    lxc config set "$vm_name" limits.memory="$memory"
+    lxc config device override "$vm_name" root size="$disk_size"
+    
+    # Configure for Windows
+    lxc config set "$vm_name" security.secureboot=false
+    
+    print_color "$GREEN" "✅ Windows VM '$vm_name' created!"
+    echo
+    print_color "$CYAN" "📋 Next steps:"
+    echo "  1. Start VM: lxc start $vm_name"
+    echo "  2. Connect to console: lxc console $vm_name"
+    echo "  3. Complete Windows installation"
+    echo "  4. Install VirtIO drivers from ISO"
+    echo "  5. Enable RDP in Windows settings"
+    echo
+    
+    # Configure RDP
+    read -p "Configure RDP access now? (Y/n): " configure_rdp
+    configure_rdp=${configure_rdp:-Y}
+    
+    if [[ "$configure_rdp" =~ ^[Yy]$ ]]; then
+        configure_windows_rdp "$vm_name"
+    fi
+    
+    read -p "⏎ Press Enter to continue..."
+    return 0
+}
+
+# Function to create container
 create_container() {
     # Detect available images first
     detect_available_images
+    local total_images=$?
+    
+    if [[ $total_images -eq 0 ]]; then
+        print_color "$YELLOW" "⚠️  No images available. Please check LXD installation."
+        read -p "⏎ Press Enter to continue..."
+        return
+    fi
     
     while true; do
-        show_image_menu
-        read -p "🎯 Select image (1-${#AVAILABLE_IMAGES[@]}) or 0/r: " image_choice
+        show_image_menu "$total_images"
+        read -p "🎯 Select image (1-$total_images) or 0/r/s/w: " image_choice
         
         case $image_choice in
             0)
@@ -327,46 +448,67 @@ create_container() {
                 ;;
             r|R)
                 detect_available_images
+                total_images=$?
+                continue
+                ;;
+            s|S)
+                # Implement search function
+                print_color "$YELLOW" "🔍 Search function coming soon..."
+                sleep 2
+                continue
+                ;;
+            w|W)
+                show_windows_guide
                 continue
                 ;;
         esac
         
-        if [[ -n "${AVAILABLE_IMAGES[$image_choice]}" ]]; then
-            IFS='|' read -r image_name display_name <<< "${AVAILABLE_IMAGES[$image_choice]}"
-            break
-        else
+        # Validate selection
+        if [[ -z "${MENU_OPTIONS[$image_choice]}" ]]; then
             print_color "$RED" "❌ Invalid selection!"
             sleep 2
+            continue
         fi
+        
+        local selected_image="${MENU_OPTIONS[$image_choice]}"
+        local display_name=""
+        
+        # Get display name
+        if [[ -n "${DETECTED_IMAGES[$selected_image]}" ]]; then
+            display_name="${DETECTED_IMAGES[$selected_image]}"
+        elif [[ -n "${DEFAULT_IMAGES[$selected_image]}" ]]; then
+            display_name="${DEFAULT_IMAGES[$selected_image]}"
+        else
+            display_name="$selected_image"
+        fi
+        
+        break
     done
     
     print_header
-    print_color "$CYAN" "🚀 Creating Container: $display_name"
-    print_color "$BLUE" "📦 Image: $image_name"
+    print_color "$CYAN" "🚀 Creating: $display_name"
+    print_color "$BLUE" "📦 Image: $selected_image"
     echo "══════════════════════════════════════════════════════════════"
     echo
     
     # Get container name
     while true; do
-        read -p "🏷️  Enter container name: " container_name
+        read -p "🏷️  Enter container/VM name: " container_name
         
-        # Check if empty
         if [[ -z "$container_name" ]]; then
-            print_color "$RED" "❌ Container name cannot be empty!"
+            print_color "$RED" "❌ Name cannot be empty!"
             continue
         fi
         
-        # Validate name format
         if [[ ! "$container_name" =~ ^[a-zA-Z][a-zA-Z0-9_-]{1,}$ ]]; then
-            print_color "$RED" "❌ Invalid name! Must start with letter, can contain letters, numbers, hyphens, underscores"
+            print_color "$RED" "❌ Invalid name! Use letters, numbers, hyphens, underscores"
             continue
         fi
         
-        # Check if container already exists
+        # Check if exists
         if lxc list -c n --format csv 2>/dev/null | grep -q "^$container_name$"; then
-            print_color "$RED" "❌ Container '$container_name' already exists!"
-            
-            read -p "🔄 Use different name? (y/N): " rename_choice
+            print_color "$RED" "❌ '$container_name' already exists!"
+            read -p "Use different name? (y/N): " rename_choice
             if [[ ! "$rename_choice" =~ ^[Yy]$ ]]; then
                 return
             fi
@@ -378,35 +520,34 @@ create_container() {
     
     # Check if Windows image
     local is_windows=false
-    if [[ "$image_name" =~ windows|win11|win10 ]]; then
+    if [[ "$selected_image" == "windows-10" || "$selected_image" == "windows-11" ]]; then
         is_windows=true
-        print_color "$PURPLE" "🪟 Windows image detected - will create as Virtual Machine"
     fi
     
-    # Get container type
+    # For Windows, use special setup
+    if [ "$is_windows" = true ]; then
+        create_windows_vm_from_iso "$container_name" "$selected_image"
+        return
+    fi
+    
+    # For Linux containers
     echo
     print_color "$YELLOW" "💻 Container Type:"
     echo "  1) Container (Default) - Lightweight, shares host kernel"
-    echo "  2) Virtual Machine - Full VM with its own kernel (more resources)"
+    echo "  2) Virtual Machine - Full VM with isolated kernel"
     
-    # Windows强制使用VM
-    if [ "$is_windows" = true ]; then
-        container_type=2
-        print_color "$PURPLE" "⚠️  Windows requires Virtual Machine mode. Auto-selected option 2"
-    else
-        read -p "Select type (1-2, default: 1): " container_type
-        container_type=${container_type:-1}
-    fi
+    read -p "Select type (1-2, default: 1): " container_type
+    container_type=${container_type:-1}
     
     local type_flag=""
     case $container_type in
         1) 
             type_flag=""
-            print_color "$BLUE" "📦 Selected: Container (lightweight)"
+            print_color "$GREEN" "📦 Selected: Container"
             ;;
         2) 
             type_flag="--vm"
-            print_color "$PURPLE" "💻 Selected: Virtual Machine (required for Windows)"
+            print_color "$PURPLE" "💻 Selected: Virtual Machine"
             ;;
         *) 
             type_flag=""
@@ -414,87 +555,48 @@ create_container() {
             ;;
     esac
     
-    # Windows专用资源设置
-    if [ "$is_windows" = true ]; then
-        print_color "$PURPLE" "🪟 Windows VM Recommended Settings:"
-        disk_size="50GB"
-        memory="4GB"
-        cpu_count="2"
-        print_color "$CYAN" "💾 Disk: $disk_size (Windows needs more space)"
-        print_color "$CYAN" "🧠 Memory: $memory (minimum for Windows)"
-        print_color "$CYAN" "⚡ CPU: $cpu_count cores"
-        
-        read -p "Use Windows defaults? (Y/n): " use_defaults
-        use_defaults=${use_defaults:-Y}
-        
-        if [[ ! "$use_defaults" =~ ^[Yy]$ ]]; then
-            echo
-            print_color "$YELLOW" "⚙️  Custom Resource Configuration:"
-            read -p "💾 Disk size (minimum 30GB, default: 50GB): " disk_size
-            disk_size=${disk_size:-50GB}
-            
-            read -p "🧠 Memory (minimum 2GB, default: 4GB): " memory
-            memory=${memory:-4GB}
-            
-            read -p "⚡ CPU cores (default: 2): " cpu_count
-            cpu_count=${cpu_count:-2}
-        fi
-    else
-        # Linux资源设置
-        echo
-        print_color "$YELLOW" "⚙️  Resource Configuration:"
-        read -p "💾 Disk size (e.g., 10GB, default: 10GB): " disk_size
-        disk_size=${disk_size:-10GB}
-        
-        read -p "🧠 Memory (e.g., 2GB, default: 2GB): " memory
-        memory=${memory:-2GB}
-        
-        read -p "⚡ CPU cores (default: 2): " cpu_count
-        cpu_count=${cpu_count:-2}
-    fi
+    # Get resources
+    echo
+    print_color "$CYAN" "⚙️  Resource Configuration:"
+    read -p "💾 Disk size (default: 10GB): " disk_size
+    disk_size=${disk_size:-10GB}
     
-    # VNC配置
+    read -p "🧠 Memory (default: 2GB): " memory
+    memory=${memory:-2GB}
+    
+    read -p "⚡ CPU cores (default: 2): " cpu_count
+    cpu_count=${cpu_count:-2}
+    
+    # VNC configuration
     local enable_vnc=false
     local vnc_password=""
     local vnc_port="5901"
     
     echo
-    print_color "$CYAN" "👁️  Remote Access Configuration:"
-    read -p "Enable VNC/RDP remote access? (y/N): " enable_vnc_choice
+    print_color "$CYAN" "👁️  Remote Access:"
+    read -p "Enable VNC remote desktop? (y/N): " vnc_choice
     
-    if [[ "$enable_vnc_choice" =~ ^[Yy]$ ]]; then
+    if [[ "$vnc_choice" =~ ^[Yy]$ ]]; then
         enable_vnc=true
+        read -p "🔒 VNC password (default: vncpassword): " vnc_password
+        vnc_password=${vnc_password:-vncpassword}
         
-        if [ "$is_windows" = true ]; then
-            print_color "$PURPLE" "💻 Windows will have RDP enabled by default"
-            vnc_port="3389"  # RDP端口
-        else
-            read -p "🔒 Set VNC password (default: vncpassword): " vnc_password
-            vnc_password=${vnc_password:-vncpassword}
-            
-            read -p "🔌 VNC port (default: 5901): " vnc_port
-            vnc_port=${vnc_port:-5901}
-        fi
+        read -p "🔌 VNC port (default: 5901): " vnc_port
+        vnc_port=${vnc_port:-5901}
     fi
     
     # Summary
     echo
     print_color "$CYAN" "📋 Creation Summary:"
-    echo "──────────────────────────────────────────────────────"
+    echo "──────────────────────────────────────"
     echo "🏷️  Name: $container_name"
-    echo "📦 Image: $display_name"
-    echo "💻 Type: $([ "$type_flag" == "--vm" ] && echo "Virtual Machine" || echo "Container")"
+    echo "📦 Image: $selected_image"
+    echo "💻 Type: $([ "$type_flag" == "--vm" ] && echo "VM" || echo "Container")"
     echo "💾 Disk: $disk_size"
     echo "🧠 Memory: $memory"
     echo "⚡ CPU: $cpu_count cores"
-    if [ "$enable_vnc" = true ]; then
-        if [ "$is_windows" = true ]; then
-            echo "👁️  Remote: RDP enabled (port 3389)"
-        else
-            echo "👁️  Remote: VNC enabled (port $vnc_port)"
-        fi
-    fi
-    echo "──────────────────────────────────────────────────────"
+    [ "$enable_vnc" = true ] && echo "👁️  VNC: Port $vnc_port"
+    echo "──────────────────────────────────────"
     echo
     
     read -p "✅ Proceed with creation? (Y/n): " confirm
@@ -506,332 +608,269 @@ create_container() {
         return
     fi
     
-    # 创建容器
-    print_color "$BLUE" "📦 Creating container '$container_name'..."
-    echo
+    # Create container
+    print_color "$BLUE" "🔄 Creating container..."
     
-    # 检查是否是Windows镜像
-    local launch_success=false
-    
-    if [ "$is_windows" = true ]; then
-        print_color "$PURPLE" "🪟 Creating Windows Virtual Machine..."
-        
-        # Windows创建特殊处理
-        print_color "$CYAN" "💡 Note: Windows VMs may require manual ISO installation"
-        print_color "$YELLOW" "⚠️  You may need to manually install Windows from ISO"
-        
-        # 尝试创建VM
-        if lxc launch $type_flag "$image_name" "$container_name" --config limits.cpu=$cpu_count --config limits.memory=$memory 2>&1 | tee /tmp/lxc_launch.log; then
-            launch_success=true
-        else
-            print_color "$RED" "❌ Failed to create Windows VM"
-            echo
-            print_color "$YELLOW" "💡 Windows VM Troubleshooting:"
-            echo "1. Ensure KVM is enabled: sudo modprobe kvm-intel (or kvm-amd)"
-            echo "2. Check virtualization in BIOS"
-            echo "3. You may need to import Windows ISO manually:"
-            echo "   lxc image import /path/to/windows.iso --alias windows10"
-            echo "   lxc launch images:windows10 vm-name --vm"
-        fi
+    if [[ "$selected_image" == images:* ]]; then
+        # Image already has remote prefix
+        lxc launch $type_flag "$selected_image" "$container_name"
+    elif lxc image show "images:$selected_image" &>/dev/null; then
+        # Try with images: prefix
+        lxc launch $type_flag "images:$selected_image" "$container_name"
     else
-        # Linux容器创建
-        if lxc launch $type_flag "$image_name" "$container_name" 2>&1 | tee /tmp/lxc_launch.log; then
-            launch_success=true
-        else
-            # 错误处理...
-            local error_msg=$(cat /tmp/lxc_launch.log)
-            # ... 保持原有的错误处理代码
-        fi
+        # Try without prefix
+        lxc launch $type_flag "$selected_image" "$container_name"
     fi
     
-    if [[ "$launch_success" == false ]]; then
+    if [[ $? -ne 0 ]]; then
         print_color "$RED" "❌ Failed to create container!"
         echo
-        print_color "$YELLOW" "💡 Troubleshooting tips:"
-        echo "1. Check if LXD is initialized: sudo lxd init --auto"
-        echo "2. List available images: lxc image list images:"
-        echo "3. Try a different image name"
-        echo "4. Check internet connection"
-        echo "5. For Windows: Check KVM/virtualization support"
+        print_color "$YELLOW" "💡 Troubleshooting:"
+        echo "1. Check if LXD is initialized: lxd init --auto"
+        echo "2. Check image availability: lxc image list images:"
+        echo "3. Try different image name"
         read -p "⏎ Press Enter to continue..."
         return
     fi
     
-    # 设置资源限制
-    print_color "$BLUE" "⚙️  Configuring resources..."
+    # Configure resources
+    lxc config set "$container_name" limits.cpu="$cpu_count"
+    lxc config set "$container_name" limits.memory="$memory"
+    lxc config device override "$container_name" root size="$disk_size"
     
-    # Set CPU
-    if lxc config set "$container_name" limits.cpu="$cpu_count" 2>/dev/null; then
-        print_color "$GREEN" "✅ CPU set to: $cpu_count cores"
-    else
-        print_color "$YELLOW" "⚠️  Could not set CPU limit"
-    fi
-    
-    # Set Memory
-    if lxc config set "$container_name" limits.memory="$memory" 2>/dev/null; then
-        print_color "$GREEN" "✅ Memory set to: $memory"
-    else
-        print_color "$YELLOW" "⚠️  Could not set memory limit"
-    fi
-    
-    # 配置VNC/RDP
+    # Install VNC if requested
     if [ "$enable_vnc" = true ]; then
-        install_vnc_service "$container_name" "$vnc_password" "$vnc_port"
+        print_color "$CYAN" "🔄 Installing VNC..."
+        install_vnc_linux "$container_name" "$vnc_password" "$vnc_port"
     fi
     
-    # 等待容器准备就绪
-    print_color "$BLUE" "⏳ Waiting for container to initialize..."
-    sleep 10
-    
-    # 显示容器信息
+    # Wait and show info
+    sleep 3
     echo
-    print_color "$CYAN" "📊 Container Information:"
-    echo "──────────────────────────────────────────────────────"
-    lxc list "$container_name"
+    print_color "$GREEN" "✅ Container '$container_name' created successfully!"
     
-    # 获取IP地址
-    local container_ip=$(lxc list "$container_name" -c 4 --format csv | head -1)
-    
-    echo
-    print_color "$GREEN" "🎉 Container '$container_name' created successfully!"
+    # Show IP and connection info
+    local container_ip=$(lxc list "$container_name" -c 4 --format csv 2>/dev/null | head -1)
     
     if [[ -n "$container_ip" && "$container_ip" != "-" ]]; then
         print_color "$BLUE" "🌐 IP Address: $container_ip"
-        
-        # 显示连接信息
         echo
-        print_color "$YELLOW" "🔗 Connection Information:"
         
-        if [ "$is_windows" = true ]; then
-            echo "  RDP: Use Remote Desktop Connection"
-            echo "  Address: $container_ip"
-            echo "  Username: Administrator"
-            echo "  Password: Set during Windows setup"
-        else
-            # 确定默认用户名
-            local default_user=""
-            if [[ "$image_name" =~ ubuntu ]]; then
-                default_user="ubuntu"
-            elif [[ "$image_name" =~ debian ]]; then
-                default_user="debian"
-            elif [[ "$image_name" =~ centos|rocky|alma|fedora ]]; then
-                default_user="root"
-            fi
-            
-            if [[ -n "$default_user" ]]; then
-                echo "  SSH: ssh $default_user@$container_ip"
-                echo "  Username: $default_user"
-                
-                if [[ "$default_user" == "root" ]]; then
-                    echo "  Password: Set during first boot or use SSH keys"
-                else
-                    echo "  Password: No password by default (use SSH keys)"
-                fi
-            fi
-            
-            if [ "$enable_vnc" = true ]; then
-                echo "  VNC: Connect to host:$vnc_port"
-                echo "  VNC Password: $vnc_password"
-            fi
+        # Determine default user
+        local default_user="root"
+        if [[ "$selected_image" =~ ubuntu ]]; then
+            default_user="ubuntu"
+        elif [[ "$selected_image" =~ debian ]]; then
+            default_user="debian"
         fi
+        
+        print_color "$CYAN" "🔗 Connection Info:"
+        echo "  SSH: ssh $default_user@$container_ip"
+        [ "$enable_vnc" = true ] && echo "  VNC: Connect to host port $vnc_port"
     fi
     
-    # 对于Windows，提供额外提示
-    if [ "$is_windows" = true ]; then
-        echo
-        print_color "$PURPLE" "🪟 Windows VM Notes:"
-        echo "  1. First boot may take several minutes"
-        echo "  2. You may need to complete Windows setup"
-        echo "  3. Use RDP for graphical interface"
-        echo "  4. Drivers are provided via VirtIO"
-    fi
-    
-    # 提供打开shell的选项
+    # Offer shell access
     echo
-    if [ "$is_windows" = false ]; then
+    if [ "$enable_vnc" != true ]; then
         read -p "💻 Open shell in container? (y/N): " open_shell
         if [[ "$open_shell" =~ ^[Yy]$ ]]; then
-            echo "📝 Type 'exit' to return to menu"
+            echo "📝 Type 'exit' to return"
             lxc exec "$container_name" -- /bin/bash || lxc exec "$container_name" -- /bin/sh
         fi
-    else
-        print_color "$CYAN" "💡 Use RDP client to connect to Windows VM"
     fi
     
     read -p "⏎ Press Enter to continue..."
 }
 
-# 添加新函数：导入Windows ISO
-import_windows_iso() {
+# Function to show Windows setup guide
+show_windows_guide() {
     print_header
-    print_color "$PURPLE" "🪟 Windows ISO Import"
+    print_color "$PURPLE" "🪟 Windows VM Setup Guide"
     echo "══════════════════════════════════════════════════════════════"
     echo
     
-    print_color "$YELLOW" "📋 Steps to add Windows to LXD:"
-    echo "──────────────────────────────────────────────────────"
-    echo "1. Download Windows ISO from Microsoft"
-    echo "2. Convert ISO to LXD compatible image"
-    echo "3. Import into LXD"
+    print_color "$CYAN" "📋 Prerequisites:"
+    echo "──────────────────────────────────────"
+    echo "✅ 1. Virtualization enabled in BIOS"
+    echo "✅ 2. Windows ISO file (from Microsoft)"
+    echo "✅ 3. At least 8GB RAM recommended"
+    echo "✅ 4. 50GB+ free disk space"
     echo
     
-    read -p "Do you have Windows ISO file? (y/N): " has_iso
+    print_color "$GREEN" "📥 Step 1: Download Windows ISO"
+    echo "• Windows 10: https://www.microsoft.com/software-download/windows10"
+    echo "• Windows 11: https://www.microsoft.com/software-download/windows11"
+    echo
     
-    if [[ "$has_iso" =~ ^[Yy]$ ]]; then
-        read -p "📁 Enter full path to Windows ISO: " iso_path
-        
-        if [[ -f "$iso_path" ]]; then
-            read -p "🏷️  Enter alias (e.g., win10-pro): " iso_alias
+    print_color "$BLUE" "⚙️  Step 2: Create Windows VM"
+    echo "1. Select 'Windows 10' or 'Windows 11' from image list"
+    echo "2. Enter VM name and path to ISO"
+    echo "3. Set resources (min: 4GB RAM, 50GB disk)"
+    echo
+    
+    print_color "$YELLOW" "🔧 Step 3: Install Windows"
+    echo "1. Start VM: lxc start <vm-name>"
+    echo "2. Connect to console: lxc console <vm-name>"
+    echo "3. Complete Windows installation"
+    echo "4. Install VirtIO drivers for better performance"
+    echo
+    
+    print_color "$PURPLE" "👁️  Step 4: Enable Remote Access"
+    echo "• RDP: Built-in to Windows"
+    echo "• VNC: Optional for Linux hosts"
+    echo "• SPICE: Best for Linux hosts with virt-viewer"
+    echo
+    
+    print_color "$RED" "⚠️  Important Notes:"
+    echo "• Windows requires license activation"
+    echo "• Regular Windows updates recommended"
+    echo "• Enable Windows Defender for security"
+    echo "• Create snapshots before major changes"
+    
+    echo
+    read -p "⏎ Press Enter to continue..."
+}
+
+# Function to install dependencies
+install_dependencies() {
+    print_header
+    print_color "$CYAN" "🔧 Installing Dependencies..."
+    echo "══════════════════════════════════════════════════════════════"
+    echo
+    
+    # Detect OS
+    if [[ -f /etc/os-release ]]; then
+        source /etc/os-release
+        OS_NAME=$ID
+    else
+        print_color "$RED" "❌ Cannot detect OS!"
+        exit 1
+    fi
+    
+    print_color "$BLUE" "📊 Detected: $PRETTY_NAME"
+    echo
+    
+    case $OS_NAME in
+        ubuntu|debian)
+            print_color "$GREEN" "📦 Installing for Ubuntu/Debian..."
+            echo
             
-            print_color "$BLUE" "🔄 Converting and importing Windows ISO..."
+            # Update
+            sudo apt update -y
             
-            # 创建临时目录
-            local temp_dir=$(mktemp -d)
+            # Install LXC
+            sudo apt install -y lxc lxc-utils bridge-utils uidmap
             
-            # 提取ISO（简化版本）
-            print_color "$CYAN" "📦 Extracting Windows ISO..."
+            # Install virtualization tools for Windows
+            sudo apt install -y qemu-kvm libvirt-daemon-system libvirt-clients \
+                virtinst virt-manager
             
-            # 尝试使用wimlib-imagex提取
-            if command -v wimlib-imagex &> /dev/null; then
-                sudo apt install -y wimtools 2>/dev/null || true
-                
-                # 挂载ISO
-                sudo mount -o loop "$iso_path" "$temp_dir" 2>/dev/null || print_color "$YELLOW" "⚠️  Could not mount ISO"
-                
-                # 导入到LXD
-                print_color "$GREEN" "✅ Importing to LXD..."
-                if lxc image import "$iso_path" --alias "$iso_alias" --vm; then
-                    print_color "$GREEN" "🎉 Windows image imported as '$iso_alias'!"
-                    print_color "$CYAN" "💡 Now you can create VM: lxc launch $iso_alias vm-name --vm"
-                else
-                    print_color "$RED" "❌ Failed to import ISO"
-                fi
-                
-                # 卸载ISO
-                sudo umount "$temp_dir" 2>/dev/null || true
-            else
-                print_color "$YELLOW" "⚠️  wimtools not installed. Installing..."
-                sudo apt install -y wimtools
+            # Install VNC tools
+            sudo apt install -y tigervnc-viewer novnc websockify
+            
+            # Install snap for LXD
+            if ! command -v snap &> /dev/null; then
+                sudo apt install -y snapd
+                sudo systemctl enable --now snapd.socket
             fi
             
-            rm -rf "$temp_dir"
-        else
-            print_color "$RED" "❌ ISO file not found: $iso_path"
-        fi
-    else
-        print_color "$CYAN" "💡 Alternative Windows sources:"
-        echo "1. Windows cloud images (limited availability)"
-        echo "2. Pre-configured Windows templates"
-        echo "3. Manual installation from ISO"
-        echo
-        print_color "$YELLOW" "📝 Manual installation steps:"
-        echo "  lxc init win10-template vm-name --vm --empty"
-        echo "  lxc config device add vm-name iso disk source=$iso_path boot.priority=10"
-        echo "  lxc start vm-name"
-        echo "  # Then complete Windows installation"
-    fi
+            # Install LXD
+            sudo snap install lxd
+            
+            # Add user to groups
+            sudo usermod -aG lxd $USER
+            sudo usermod -aG kvm $USER 2>/dev/null || true
+            sudo usermod -aG libvirt $USER 2>/dev/null || true
+            
+            # Initialize LXD
+            sudo lxd init --auto
+            
+            print_color "$GREEN" "✅ Dependencies installed!"
+            echo
+            print_color "$YELLOW" "⚠️  Log out and back in for group changes!"
+            ;;
+        *)
+            print_color "$RED" "❌ Unsupported OS"
+            ;;
+    esac
     
     read -p "⏎ Press Enter to continue..."
 }
 
-# 修改image_management函数
-image_management() {
-    while true; do
-        print_header
-        print_color "$CYAN" "📦 Image Management"
-        echo "══════════════════════════════════════════════════════════════"
-        echo
-        
-        print_color "$YELLOW" "📋 Operations:"
-        echo "  1) 🔍 List Available Images"
-        echo "  2) 🔄 Refresh Image List"
-        echo "  3) 🔎 Search Images"
-        echo "  4) 🪟 Import Windows ISO"
-        echo "  5) 📥 Import Custom Image"
-        echo "  0) ↩️  Back"
-        echo
-        
-        read -p "🎯 Select option: " choice
-        
-        case $choice in
-            1)
-                detect_available_images
-                show_image_menu
-                read -p "⏎ Press Enter to continue..."
-                ;;
-            2)
-                refresh_images
-                ;;
-            3)
-                search_images
-                ;;
-            4)
-                import_windows_iso
-                ;;
-            5)
-                print_color "$BLUE" "📥 Import Custom Image"
-                read -p "Enter image URL or local path: " image_url
-                if [[ -n "$image_url" ]]; then
-                    read -p "Enter alias for image: " image_alias
-                    if lxc image import "$image_url" --alias "$image_alias"; then
-                        print_color "$GREEN" "✅ Image imported as: $image_alias"
-                    else
-                        print_color "$RED" "❌ Failed to import image"
-                    fi
-                fi
-                read -p "⏎ Press Enter to continue..."
-                ;;
-            0)
-                return
-                ;;
-            *)
-                print_color "$RED" "❌ Invalid option!"
-                sleep 1
-                ;;
-        esac
-    done
-}
-
-# 修改主菜单
+# Main menu
 main_menu() {
     while true; do
         print_header
         
-        # Get container count
-        local container_count=0
-        local vm_count=0
-        if command -v lxc &> /dev/null; then
-            container_count=$(lxc list --format csv 2>/dev/null | wc -l)
-            vm_count=$(lxc list --format csv 2>/dev/null | xargs -I {} lxc config show {} 2>/dev/null | grep "type: virtual-machine" | wc -l)
-        fi
-        
         print_color "$GREEN" "🏠 Main Menu"
-        print_color "$BLUE" "📦 Active Containers: $container_count (VMs: $vm_count)"
+        print_color "$BLUE" "📦 Active Containers: $CONTAINER_COUNT"
         echo "══════════════════════════════════════════════════════════════"
         echo
         
         echo "  1) 🚀 Create New Container/VM"
         echo "  2) 📋 List Containers"
         echo "  3) ⚙️  Manage Container"
-        echo "  4) 📦 Image Management"
-        echo "  5) 🪟 Windows Tools"
-        echo "  6) 🔧 Check Installation"
-        echo "  7) 📊 System Information"
-        echo "  8) ⚡ Install Dependencies"
+        echo "  4) 🪟 Windows Setup Guide"
+        echo "  5) 🔧 Check Installation"
+        echo "  6) 📊 System Info"
+        echo "  7) ⚡ Install Dependencies"
         echo "  0) 👋 Exit"
         echo
         
         read -p "🎯 Select option: " choice
         
         case $choice in
-            1) create_container ;;
-            2) list_containers ;;
-            3) manage_container ;;
-            4) image_management ;;
-            5) windows_tools ;;
-            6) check_installation ;;
-            7) show_system_info ;;
-            8) install_dependencies ;;
+            1) 
+                create_container 
+                # Refresh container count
+                if command -v lxc &> /dev/null; then
+                    CONTAINER_COUNT=$(lxc list --format csv 2>/dev/null | wc -l)
+                fi
+                ;;
+            2) 
+                print_header
+                print_color "$CYAN" "📋 Container List"
+                echo "══════════════════════════════════════════════════════════════"
+                echo
+                lxc list 2>/dev/null || print_color "$RED" "❌ LXC not available"
+                read -p "⏎ Press Enter to continue..."
+                ;;
+            3) 
+                print_color "$YELLOW" "⚙️  Management coming soon..."
+                sleep 2
+                ;;
+            4) 
+                show_windows_guide
+                ;;
+            5) 
+                print_header
+                print_color "$CYAN" "🔧 System Check"
+                echo "══════════════════════════════════════════════════════════════"
+                echo
+                if command -v lxc &> /dev/null; then
+                    print_color "$GREEN" "✅ LXC installed"
+                    lxc --version
+                else
+                    print_color "$RED" "❌ LXC not installed"
+                fi
+                echo
+                read -p "⏎ Press Enter to continue..."
+                ;;
+            6) 
+                print_header
+                print_color "$CYAN" "📊 System Information"
+                echo "══════════════════════════════════════════════════════════════"
+                echo
+                echo "OS: $(grep PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '\"')"
+                echo "Kernel: $(uname -r)"
+                echo "CPU: $(nproc) cores"
+                echo "Memory: $(free -h | awk '/^Mem:/ {print $2}')"
+                echo
+                read -p "⏎ Press Enter to continue..."
+                ;;
+            7) 
+                install_dependencies
+                ;;
             0)
                 print_header
                 print_color "$GREEN" "👋 Goodbye! Happy containerizing! 🐳"
@@ -846,125 +885,39 @@ main_menu() {
     done
 }
 
-# 添加新函数：Windows工具菜单
-windows_tools() {
-    while true; do
-        print_header
-        print_color "$PURPLE" "🪟 Windows VM Tools"
-        echo "══════════════════════════════════════════════════════════════"
-        echo
-        
-        print_color "$YELLOW" "📋 Windows VM Operations:"
-        echo "  1) 🪟 List Windows VMs"
-        echo "  2) 💾 Install VirtIO Drivers"
-        echo "  3) 🔧 Configure RDP Access"
-        echo "  4) 📁 Share Folder with Host"
-        echo "  5) 🎮 Enable Enhanced Video"
-        echo "  0) ↩️  Back"
-        echo
-        
-        read -p "🎯 Select option: " choice
-        
-        case $choice in
-            1)
-                print_color "$CYAN" "🪟 Windows VMs:"
-                lxc list --format csv | while IFS= read -r line; do
-                    local name=$(echo "$line" | cut -d',' -f1)
-                    if lxc config show "$name" 2>/dev/null | grep -q "virtual-machine"; then
-                        print_color "$PURPLE" "  💻 $name (Windows VM)"
-                    fi
-                done
-                read -p "⏎ Press Enter to continue..."
-                ;;
-            2)
-                print_color "$CYAN" "💾 VirtIO Drivers for Windows"
-                echo "Download from: https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/"
-                echo
-                echo "After downloading:"
-                echo "1. Mount ISO to Windows VM:"
-                echo "   lxc config device add vm-name virtio disk source=/path/to/virtio.iso"
-                echo "2. Install drivers in Windows Device Manager"
-                read -p "⏎ Press Enter to continue..."
-                ;;
-            3)
-                print_color "$CYAN" "🔧 Configure RDP on Windows VM"
-                echo "In Windows VM, enable RDP:"
-                echo "1. Open System Properties"
-                echo "2. Remote Desktop → Allow remote connections"
-                echo "3. Set firewall rules if needed"
-                echo
-                print_color "$GREEN" "💡 Default RDP port: 3389"
-                read -p "⏎ Press Enter to continue..."
-                ;;
-            4)
-                print_color "$CYAN" "📁 Share folder with Windows VM"
-                read -p "VM name: " vm_name
-                read -p "Host folder path: " host_path
-                read -p "Share name (e.g., host-files): " share_name
-                
-                if [[ -d "$host_path" ]]; then
-                    lxc config device add "$vm_name" "$share_name" disk \
-                        source="$host_path" path="C:\\Shares\\$share_name"
-                    print_color "$GREEN" "✅ Folder shared as C:\\Shares\\$share_name"
-                else
-                    print_color "$RED" "❌ Host folder not found"
-                fi
-                read -p "⏎ Press Enter to continue..."
-                ;;
-            5)
-                print_color "$CYAN" "🎮 Enhanced Video for Windows VM"
-                echo "Adding VirtIO-GPU with 3D acceleration:"
-                lxc config device add "$vm_name" video-gpu gpu \
-                    driver=virtio-gpu accel3d=true
-                print_color "$GREEN" "✅ 3D acceleration enabled"
-                read -p "⏎ Press Enter to continue..."
-                ;;
-            0)
-                return
-                ;;
-            *)
-                print_color "$RED" "❌ Invalid option!"
-                sleep 1
-                ;;
-        esac
-    done
-}
-
-# 修改main函数
+# Main function
 main() {
-    # Check if in terminal
+    # Check terminal
     if [[ ! -t 0 ]]; then
-        print_color "$RED" "❌ This script must be run in a terminal!"
+        print_color "$RED" "❌ Run in terminal!"
         exit 1
     fi
     
     # Welcome
     print_header
-    print_color "$GREEN" "🌟 Welcome to LXC/LXD Container Manager v4.0"
-    print_color "$PURPLE" "🪟 Windows & Linux Support with VNC/RDP"
+    print_color "$GREEN" "🌟 Welcome to LXC/LXD Container Manager v6.0"
+    print_color "$PURPLE" "🪟 Windows 10/11 & Linux with VNC/RDP support"
     echo
     
-    # Check system
-    check_system_ready
-    
-    # Check for virtualization support (important for Windows)
-    if ! grep -Eq "(vmx|svm)" /proc/cpuinfo; then
-        print_color "$YELLOW" "⚠️  CPU virtualization not detected or disabled in BIOS"
-        print_color "$CYAN" "💡 Windows VMs require hardware virtualization (Intel VT-x/AMD-V)"
-        echo
-        read -p "Continue anyway? (y/N): " continue_anyway
-        if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
-            print_color "$RED" "Please enable virtualization in BIOS/UEFI settings"
-            exit 1
+    # Check if LXC installed
+    if ! command -v lxc &> /dev/null; then
+        print_color "$YELLOW" "⚠️  LXC/LXD not detected"
+        read -p "Install dependencies now? (Y/n): " install_now
+        install_now=${install_now:-Y}
+        
+        if [[ "$install_now" =~ ^[Yy]$ ]]; then
+            install_dependencies
+            print_color "$GREEN" "✅ Please log out and log back in, then run script again"
+            exit 0
         fi
     fi
     
-    # Initial image detection
+    # Initial detection
     detect_available_images
     
-    # Start main menu
+    # Start menu
     main_menu
 }
 
-# Run main
+# Run
 main
