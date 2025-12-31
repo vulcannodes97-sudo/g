@@ -50,6 +50,89 @@ declare -A DEFAULT_IMAGES=(
     ["11"]="windows:win11|Windows 11 (via Distrobuilder)"
 )
 
+# Function to show image selection menu
+show_image_menu() {
+    print_header
+    print_color "$CYAN" "📦 Available Container Images"
+    echo "══════════════════════════════════════════════════════════"
+    echo
+    
+    # Sort image keys numerically
+    mapfile -t sorted_keys < <(printf '%s\n' "${!AVAILABLE_IMAGES[@]}" | sort -n)
+    
+    for key in "${sorted_keys[@]}"; do
+        IFS='|' read -r image_name display_name <<< "${AVAILABLE_IMAGES[$key]}"
+        print_color "$GREEN" "  $key) $display_name"
+        print_color "$BLUE" "     📦 Image: $image_name"
+        echo
+    done
+    
+    echo "══════════════════════════════════════════════════════════"
+    echo "  0) ↩️  Back to Main Menu"
+    echo "  r) 🔄 Refresh Image List"
+    echo
+}
+
+# Function to detect available images
+detect_available_images() {
+    print_color "$CYAN" "🔍 Scanning for available images..."
+    echo
+    
+    # Clear previous image list
+    declare -gA AVAILABLE_IMAGES
+    AVAILABLE_IMAGES=()
+    
+    # List of remotes to check (added windows remote)
+    local remotes=("images" "ubuntu" "debian" "fedora" "centos" "almalinux" "rockylinux")
+    local image_count=0
+    
+    # First add our default Windows images
+    for key in "${!DEFAULT_IMAGES[@]}"; do
+        IFS='|' read -r image_name display_name <<< "${DEFAULT_IMAGES[$key]}"
+        if [[ "$display_name" =~ [Ww]indows ]]; then
+            ((image_count++))
+            AVAILABLE_IMAGES["$image_count"]="$image_name|$display_name"
+        fi
+    done
+    
+    # Try to get images from remotes
+    for remote in "${remotes[@]}"; do
+        print_color "$BLUE" "📡 Checking remote: $remote"
+        
+        # Try to list images from this remote
+        local remote_images=$(timeout 10 lxc image list "$remote:" 2>/dev/null | grep -E "^\| [a-zA-Z0-9/:-]+ \|" | head -20 2>/dev/null || true)
+        
+        if [[ -n "$remote_images" ]]; then
+            while IFS= read -r line; do
+                # Extract image name from line
+                local image_name=$(echo "$line" | awk -F'|' '{print $2}' | xargs)
+                local description=$(echo "$line" | awk -F'|' '{print $3}' | xargs | cut -c1-50)
+                
+                if [[ -n "$image_name" && ! "$image_name" =~ "ALIAS" && ! "$image_name" =~ "FINGERPRINT" ]]; then
+                    ((image_count++))
+                    AVAILABLE_IMAGES["$image_count"]="$remote:$image_name|$description"
+                    echo "  ✅ Found: $remote:$image_name"
+                fi
+            done <<< "$remote_images"
+        else
+            echo "  ⚠️  No images found or remote not accessible"
+        fi
+    done
+    
+    # If no images found, use defaults
+    if [[ ${#AVAILABLE_IMAGES[@]} -eq 0 ]]; then
+        print_color "$YELLOW" "⚠️  Could not detect images automatically. Using defaults..."
+        AVAILABLE_IMAGES=()
+        for key in "${!DEFAULT_IMAGES[@]}"; do
+            AVAILABLE_IMAGES["$key"]="${DEFAULT_IMAGES[$key]}"
+        done
+    fi
+    
+    echo
+    print_color "$GREEN" "✅ Found ${#AVAILABLE_IMAGES[@]} available images"
+    sleep 1
+}
+
 # Function to check Windows RDP support
 check_windows_rdp_support() {
     print_color "$CYAN" "🔍 Checking Windows RDP requirements..."
@@ -61,7 +144,7 @@ check_windows_rdp_support() {
     print_color "$BLUE" "📦 Looking for Windows images..."
     
     # Check for Windows images from community
-    if lxc image list images: | grep -i "windows" | head -5; then
+    if lxc image list images: 2>/dev/null | grep -i "windows" | head -5; then
         print_color "$GREEN" "✅ Windows images available"
         has_windows_support=true
     else
@@ -79,6 +162,191 @@ check_windows_rdp_support() {
     
     echo
     return 0
+}
+
+# Function to install dependencies
+install_dependencies() {
+    print_header
+    print_color "$CYAN" "🔧 Installing Dependencies..."
+    echo "══════════════════════════════════════════════════════════"
+    
+    # Detect distribution
+    if [[ -f /etc/os-release ]]; then
+        source /etc/os-release
+        OS_NAME=$ID
+    else
+        print_color "$RED" "❌ Cannot detect OS distribution!"
+        exit 1
+    fi
+    
+    print_color "$BLUE" "📊 Detected: $PRETTY_NAME"
+    echo
+    
+    case $OS_NAME in
+        ubuntu|debian)
+            print_color "$GREEN" "📦 Installing for Ubuntu/Debian..."
+            echo
+            
+            # Update package lists
+            print_color "$CYAN" "🔄 Updating package lists..."
+            sudo apt update -y
+            
+            # Install LXC
+            print_color "$CYAN" "📥 Installing LXC..."
+            sudo apt install -y lxc lxc-utils lxc-templates bridge-utils uidmap
+            
+            # Install and configure snapd for LXD
+            if ! command -v snap &> /dev/null; then
+                print_color "$CYAN" "📦 Installing snapd..."
+                sudo apt install -y snapd
+                sudo systemctl enable --now snapd.socket
+                sudo ln -s /var/lib/snapd/snap /snap 2>/dev/null || true
+                echo "⚠️  Please log out and log back in for snap to work properly"
+            fi
+            
+            # Install LXD
+            print_color "$CYAN" "🚀 Installing LXD..."
+            sudo snap install lxd
+            
+            # Add user to lxd group
+            print_color "$CYAN" "👤 Adding user to lxd group..."
+            sudo usermod -aG lxd $USER
+            
+            # Initialize LXD
+            print_color "$CYAN" "⚙️  Initializing LXD..."
+            echo "This will set up LXD with default settings..."
+            sudo lxd init --auto
+            
+            # Start LXD service
+            print_color "$CYAN" "▶️  Starting LXD service..."
+            sudo systemctl start snap.lxd.daemon 2>/dev/null || sudo systemctl start lxd 2>/dev/null
+            
+            print_color "$GREEN" "✅ Dependencies installed successfully!"
+            echo
+            print_color "$YELLOW" "⚠️  IMPORTANT: Please log out and log back in for group changes!"
+            print_color "$YELLOW" "   Then run this script again."
+            ;;
+        *)
+            print_color "$RED" "❌ Unsupported OS: $OS_NAME"
+            print_color "$YELLOW" "📋 Manual installation required:"
+            echo "For Ubuntu/Debian:"
+            echo "  sudo apt install lxc lxc-utils bridge-utils snapd"
+            echo "  sudo snap install lxd"
+            echo "  sudo usermod -aG lxd \$USER"
+            echo "  sudo lxd init --auto"
+            ;;
+    esac
+    
+    read -p "⏎ Press Enter to continue..."
+    exit 0
+}
+
+# Function to check installation
+check_installation() {
+    print_header
+    print_color "$CYAN" "🔍 Checking Installation..."
+    echo "══════════════════════════════════════════════════════════"
+    echo
+    
+    local checks_passed=0
+    local total_checks=5
+    
+    # Check LXC
+    if command -v lxc &> /dev/null; then
+        print_color "$GREEN" "✅ LXC is installed"
+        ((checks_passed++))
+    else
+        print_color "$RED" "❌ LXC is NOT installed"
+    fi
+    
+    # Check LXD
+    if command -v lxd &> /dev/null; then
+        print_color "$GREEN" "✅ LXD is installed"
+        ((checks_passed++))
+    else
+        print_color "$RED" "❌ LXD is NOT installed"
+    fi
+    
+    # Check if user is in lxd group
+    if groups $USER | grep -q '\blxd\b'; then
+        print_color "$GREEN" "✅ User is in lxd group"
+        ((checks_passed++))
+    else
+        print_color "$YELLOW" "⚠️  User is NOT in lxd group"
+    fi
+    
+    # Check LXD service
+    if systemctl is-active --quiet snap.lxd.daemon 2>/dev/null || systemctl is-active --quiet lxd 2>/dev/null; then
+        print_color "$GREEN" "✅ LXD service is running"
+        ((checks_passed++))
+    else
+        print_color "$RED" "❌ LXD service is NOT running"
+    fi
+    
+    # Check if LXD is initialized
+    if lxc cluster list 2>&1 | grep -q "no such file or directory" || lxc cluster list 2>&1 | grep -q "not initialized"; then
+        print_color "$YELLOW" "⚠️  LXD is not initialized"
+    else
+        print_color "$GREEN" "✅ LXD is initialized"
+        ((checks_passed++))
+    fi
+    
+    echo
+    print_color "$BLUE" "📊 Status: $checks_passed/$total_checks checks passed"
+    
+    if [[ $checks_passed -eq $total_checks ]]; then
+        print_color "$GREEN" "🎉 All systems go! LXC/LXD is ready."
+    elif [[ $checks_passed -ge 3 ]]; then
+        print_color "$YELLOW" "⚠️  Some issues detected. Check below:"
+        echo
+        print_color "$CYAN" "💡 Troubleshooting tips:"
+        echo "1. If not in lxd group, run: sudo usermod -aG lxd $USER"
+        echo "2. If LXD not initialized, run: sudo lxd init --auto"
+        echo "3. If service not running: sudo systemctl start snap.lxd.daemon"
+        echo "4. Log out and log back in after adding to lxd group"
+    else
+        print_color "$RED" "🚨 Major issues detected. Please reinstall dependencies."
+    fi
+    
+    read -p "⏎ Press Enter to continue..."
+}
+
+# Function to search for specific images
+search_images() {
+    print_header
+    print_color "$CYAN" "🔍 Search Images"
+    echo "══════════════════════════════════════════════════════════"
+    echo
+    
+    read -p "🔎 Enter search term (e.g., ubuntu, debian, centos): " search_term
+    
+    if [[ -z "$search_term" ]]; then
+        return
+    fi
+    
+    print_color "$BLUE" "🔍 Searching for '$search_term'..."
+    echo
+    
+    local search_results=()
+    local result_count=0
+    
+    # Search in available images
+    for key in "${!AVAILABLE_IMAGES[@]}"; do
+        IFS='|' read -r image_name display_name <<< "${AVAILABLE_IMAGES[$key]}"
+        if [[ "$image_name" =~ $search_term || "$display_name" =~ $search_term ]]; then
+            ((result_count++))
+            search_results["$result_count"]="$image_name|$display_name"
+            print_color "$GREEN" "  $result_count) $display_name"
+            print_color "$BLUE" "     📦 Image: $image_name"
+            echo
+        fi
+    done
+    
+    if [[ $result_count -eq 0 ]]; then
+        print_color "$YELLOW" "⚠️  No images found matching '$search_term'"
+    fi
+    
+    read -p "⏎ Press Enter to continue..."
 }
 
 # Function to setup Windows RDP container
@@ -138,7 +406,7 @@ setup_windows_lxd_image() {
     print_color "$BLUE" "📦 Looking for Windows LXD images..."
     
     # Search for Windows images
-    local windows_images=$(lxc image list images: | grep -i "windows" | head -5)
+    local windows_images=$(lxc image list images: 2>/dev/null | grep -i "windows" | head -5)
     
     if [[ -z "$windows_images" ]]; then
         print_color "$RED" "❌ No Windows images found in LXD repository"
@@ -182,7 +450,7 @@ setup_windows_lxd_image() {
     # Get IP address
     local vm_ip=""
     for i in {1..30}; do
-        vm_ip=$(lxc list "$container_name" -c 4 --format csv)
+        vm_ip=$(lxc list "$container_name" -c 4 --format csv 2>/dev/null)
         if [[ -n "$vm_ip" && "$vm_ip" != "-" ]]; then
             break
         fi
@@ -675,6 +943,461 @@ create_container() {
     read -p "⏎ Press Enter to continue..."
 }
 
+# Function to list containers
+list_containers() {
+    print_header
+    print_color "$CYAN" "📋 Container List"
+    echo "══════════════════════════════════════════════════════════"
+    echo
+    
+    if ! command -v lxc &> /dev/null; then
+        print_color "$RED" "❌ LXC is not installed!"
+        read -p "⏎ Press Enter to continue..."
+        return
+    fi
+    
+    # List all containers with formatting
+    if ! lxc list; then
+        print_color "$YELLOW" "⚠️  Could not list containers. Is LXD running?"
+        echo "Try: sudo systemctl start snap.lxd.daemon"
+    fi
+    
+    echo
+    print_color "$YELLOW" "📊 Legend:"
+    echo "  🟢 RUNNING - Container is active"
+    echo "  🔴 STOPPED - Container is not running"
+    echo "  ⚪ FROZEN  - Container is paused"
+    echo "  🟡 ERROR   - Container has issues"
+    
+    read -p "⏎ Press Enter to continue..."
+}
+
+# Function to manage containers
+manage_container() {
+    print_header
+    print_color "$CYAN" "⚙️  Container Management"
+    echo "══════════════════════════════════════════════════════════"
+    echo
+    
+    if ! command -v lxc &> /dev/null; then
+        print_color "$RED" "❌ LXC is not installed!"
+        read -p "⏎ Press Enter to continue..."
+        return
+    fi
+    
+    # Get container list
+    local containers=$(lxc list -c n --format csv 2>/dev/null)
+    if [[ -z "$containers" ]]; then
+        print_color "$YELLOW" "📭 No containers found!"
+        read -p "⏎ Press Enter to continue..."
+        return
+    fi
+    
+    # Display containers
+    print_color "$BLUE" "📋 Available Containers:"
+    echo
+    local i=1
+    declare -A container_map
+    for container in $containers; do
+        container_map[$i]=$container
+        local status=$(lxc list $container -c s --format csv 2>/dev/null || echo "UNKNOWN")
+        local status_icon="❓"
+        [[ "$status" == "RUNNING" ]] && status_icon="🟢"
+        [[ "$status" == "STOPPED" ]] && status_icon="🔴"
+        [[ "$status" == "FROZEN" ]] && status_icon="⚪"
+        echo "  $i) $status_icon $container ($status)"
+        ((i++))
+    done
+    
+    echo
+    read -p "🎯 Select container number: " container_num
+    
+    if [[ -z "${container_map[$container_num]}" ]]; then
+        print_color "$RED" "❌ Invalid selection!"
+        read -p "⏎ Press Enter to continue..."
+        return
+    fi
+    
+    local container_name=${container_map[$container_num]}
+    container_management_menu "$container_name"
+}
+
+# Container management sub-menu
+container_management_menu() {
+    local container_name=$1
+    
+    while true; do
+        print_header
+        print_color "$CYAN" "⚙️  Managing: $container_name"
+        
+        # Get container status
+        local container_status=$(lxc list "$container_name" -c s --format csv 2>/dev/null || echo "UNKNOWN")
+        local container_ip=$(lxc list "$container_name" -c 4 --format csv 2>/dev/null | head -1)
+        
+        print_color "$BLUE" "📊 Status: $container_status"
+        if [[ -n "$container_ip" && "$container_ip" != "-" ]]; then
+            print_color "$GREEN" "🌐 IP: $container_ip"
+        fi
+        echo "══════════════════════════════════════════════════════════"
+        echo
+        
+        print_color "$YELLOW" "📋 Operations:"
+        echo "  1) ▶️  Start Container"
+        echo "  2) ⏹️  Stop Container"
+        echo "  3) 🔄 Restart Container"
+        echo "  4) ⏸️  Pause/Freeze"
+        echo "  5) ⏯️  Resume/Unfreeze"
+        echo "  6) 💻 Open Shell"
+        echo "  7) 📊 Show Info"
+        echo "  8) 📝 View Logs"
+        echo "  9) ⚙️  Configure Resources"
+        echo "  10) 📦 Take Snapshot"
+        echo "  11) 🗑️  Delete Container"
+        echo "  0) ↩️  Back"
+        echo
+        
+        read -p "🎯 Select operation: " operation
+        
+        case $operation in
+            1)
+                print_color "$GREEN" "▶️  Starting container..."
+                if lxc start "$container_name"; then
+                    print_color "$GREEN" "✅ Container started!"
+                else
+                    print_color "$RED" "❌ Failed to start container"
+                fi
+                sleep 2
+                ;;
+            2)
+                print_color "$YELLOW" "⏹️  Stopping container..."
+                if lxc stop "$container_name"; then
+                    print_color "$GREEN" "✅ Container stopped!"
+                else
+                    print_color "$RED" "❌ Failed to stop container"
+                fi
+                sleep 2
+                ;;
+            3)
+                print_color "$BLUE" "🔄 Restarting container..."
+                if lxc restart "$container_name"; then
+                    print_color "$GREEN" "✅ Container restarted!"
+                else
+                    print_color "$RED" "❌ Failed to restart container"
+                fi
+                sleep 2
+                ;;
+            4)
+                print_color "$PURPLE" "⏸️  Freezing container..."
+                if lxc freeze "$container_name"; then
+                    print_color "$GREEN" "✅ Container frozen!"
+                else
+                    print_color "$RED" "❌ Failed to freeze container"
+                fi
+                sleep 2
+                ;;
+            5)
+                print_color "$PURPLE" "⏯️  Unfreezing container..."
+                if lxc unfreeze "$container_name"; then
+                    print_color "$GREEN" "✅ Container unfrozen!"
+                else
+                    print_color "$RED" "❌ Failed to unfreeze container"
+                fi
+                sleep 2
+                ;;
+            6)
+                print_color "$CYAN" "💻 Opening shell..."
+                echo "📝 Type 'exit' to return to menu"
+                if ! lxc exec "$container_name" -- /bin/bash; then
+                    print_color "$YELLOW" "⚠️  Trying /bin/sh instead..."
+                    lxc exec "$container_name" -- /bin/sh
+                fi
+                ;;
+            7)
+                print_color "$BLUE" "📊 Container Information:"
+                lxc info "$container_name" || echo "Could not get container info"
+                read -p "⏎ Press Enter to continue..."
+                ;;
+            8)
+                print_color "$BLUE" "📝 Container Logs (last 50 lines):"
+                lxc info "$container_name" --show-log | tail -50 || echo "Could not get logs"
+                read -p "⏎ Press Enter to continue..."
+                ;;
+            9)
+                configure_container "$container_name"
+                ;;
+            10)
+                read -p "📸 Snapshot name: " snapshot_name
+                if lxc snapshot "$container_name" "$snapshot_name"; then
+                    print_color "$GREEN" "✅ Snapshot created: $snapshot_name"
+                else
+                    print_color "$RED" "❌ Failed to create snapshot"
+                fi
+                sleep 2
+                ;;
+            11)
+                print_color "$RED" "⚠️  ⚠️  ⚠️  WARNING: This will permanently delete '$container_name'!"
+                read -p "🗑️  Are you sure? (type 'DELETE' to confirm): " confirm
+                if [[ "$confirm" == "DELETE" ]]; then
+                    print_color "$RED" "🗑️  Deleting container..."
+                    if lxc delete "$container_name" --force; then
+                        print_color "$GREEN" "✅ Container deleted!"
+                        read -p "⏎ Press Enter to continue..."
+                        return
+                    else
+                        print_color "$RED" "❌ Failed to delete container"
+                    fi
+                else
+                    print_color "$YELLOW" "⚠️  Deletion cancelled"
+                fi
+                sleep 2
+                ;;
+            0)
+                return
+                ;;
+            *)
+                print_color "$RED" "❌ Invalid operation!"
+                sleep 1
+                ;;
+        esac
+    done
+}
+
+# Function to configure container resources
+configure_container() {
+    local container_name=$1
+    
+    while true; do
+        print_header
+        print_color "$CYAN" "⚙️  Configuring: $container_name"
+        echo "══════════════════════════════════════════════════════════"
+        echo
+        
+        print_color "$YELLOW" "📋 Resource Configuration:"
+        echo "  1) ⚡ Set CPU Limits"
+        echo "  2) 🧠 Set Memory Limits"
+        echo "  3) 💾 Set Disk Limits"
+        echo "  4) 🌐 Network Settings"
+        echo "  5) 👁️  View Current Configuration"
+        echo "  0) ↩️  Back"
+        echo
+        
+        read -p "🎯 Select option: " config_opt
+        
+        case $config_opt in
+            1)
+                read -p "⚡ Enter CPU limit (e.g., 2 or 0-4): " cpu_limit
+                if lxc config set "$container_name" limits.cpu="$cpu_limit"; then
+                    print_color "$GREEN" "✅ CPU limit set to: $cpu_limit"
+                else
+                    print_color "$RED" "❌ Failed to set CPU limit"
+                fi
+                ;;
+            2)
+                read -p "🧠 Enter memory limit (e.g., 2GB or 512MB): " mem_limit
+                if lxc config set "$container_name" limits.memory="$mem_limit"; then
+                    print_color "$GREEN" "✅ Memory limit set to: $mem_limit"
+                else
+                    print_color "$RED" "❌ Failed to set memory limit"
+                fi
+                ;;
+            3)
+                read -p "💾 Enter disk limit (e.g., 20GB): " disk_limit
+                if lxc config device set "$container_name" root size="$disk_limit"; then
+                    print_color "$GREEN" "✅ Disk limit set to: $disk_limit"
+                else
+                    print_color "$RED" "❌ Failed to set disk limit"
+                fi
+                ;;
+            4)
+                echo "🌐 Available networks:"
+                lxc network list || echo "Could not list networks"
+                read -p "Network name to attach (default: lxdbr0): " net_name
+                net_name=${net_name:-lxdbr0}
+                if lxc network attach "$net_name" "$container_name" eth0; then
+                    print_color "$GREEN" "✅ Attached to network: $net_name"
+                else
+                    print_color "$RED" "❌ Failed to attach network"
+                fi
+                ;;
+            5)
+                print_color "$BLUE" "👁️  Current Configuration:"
+                lxc config show "$container_name" || echo "Could not get configuration"
+                ;;
+            0)
+                return
+                ;;
+            *)
+                print_color "$RED" "❌ Invalid option!"
+                ;;
+        esac
+        
+        read -p "⏎ Press Enter to continue..."
+    done
+}
+
+# Function to show system info
+show_system_info() {
+    print_header
+    print_color "$CYAN" "📊 System Information"
+    echo "══════════════════════════════════════════════════════════"
+    echo
+    
+    # LXC/LXD Info
+    print_color "$YELLOW" "🚀 LXC/LXD Information:"
+    echo "──────────────────────────────────────"
+    if command -v lxc &> /dev/null; then
+        echo -n "📦 LXC Version: "
+        lxc version 2>/dev/null || echo "Unknown"
+        
+        # Container count
+        local container_count=$(lxc list --format csv 2>/dev/null | wc -l)
+        echo "📦 Containers: $container_count"
+        
+        # Check for Windows containers
+        local windows_containers=$(lxc list --format csv 2>/dev/null | grep -i windows | wc -l)
+        if [[ $windows_containers -gt 0 ]]; then
+            echo "🖥️  Windows Containers: $windows_containers"
+        fi
+        
+        # Storage pools
+        echo "💾 Storage Pools:"
+        lxc storage list 2>/dev/null | head -5 || echo "  Not available"
+        
+        # Networks
+        echo "🌐 Networks:"
+        lxc network list 2>/dev/null | head -5 || echo "  Not available"
+    else
+        echo "❌ LXC not installed"
+    fi
+    
+    # RDP Tools check
+    echo
+    print_color "$YELLOW" "🌐 RDP Support:"
+    echo "──────────────────────────────────────"
+    if command -v xfreerdp &> /dev/null; then
+        echo "✅ FreeRDP installed"
+    else
+        echo "❌ FreeRDP not installed"
+    fi
+    
+    if command -v remmina &> /dev/null; then
+        echo "✅ Remmina installed"
+    else
+        echo "❌ Remmina not installed"
+    fi
+    
+    # Windows virtualization support
+    echo
+    print_color "$YELLOW" "🖥️  Windows Virtualization:"
+    echo "──────────────────────────────────────"
+    if command -v virt-manager &> /dev/null; then
+        echo "✅ virt-manager installed"
+    else
+        echo "❌ virt-manager not installed (recommended for Windows)"
+    fi
+    
+    if [[ -c /dev/kvm ]]; then
+        echo "✅ KVM acceleration available"
+    else
+        echo "⚠️  KVM not available (Windows VMs may be slow)"
+    fi
+    
+    # System Info
+    echo
+    print_color "$YELLOW" "💻 System Information:"
+    echo "──────────────────────────────────────"
+    
+    # OS info
+    if [[ -f /etc/os-release ]]; then
+        source /etc/os-release
+        echo "🏷️  OS: $PRETTY_NAME"
+    fi
+    
+    # Kernel
+    echo "🐧 Kernel: $(uname -r)"
+    
+    # CPU
+    echo "⚡ CPU: $(nproc) cores"
+    echo "💾 Memory: $(free -h | awk '/^Mem:/ {print $2}') total"
+    echo "💿 Disk: $(df -h / | awk 'NR==2 {print $4}') free"
+    
+    echo
+    print_color "$CYAN" "🔧 Quick Commands:"
+    echo "  lxc list                   # List all containers"
+    echo "  xfreerdp /v:[IP] /u:[USER] # Connect via RDP"
+    echo "  virt-manager               # GUI for Windows VMs"
+    echo "  sudo lxd init --auto       # Initialize LXD"
+    
+    read -p "⏎ Press Enter to continue..."
+}
+
+# Function to refresh images
+refresh_images() {
+    print_header
+    print_color "$CYAN" "🔄 Refreshing Available Images..."
+    echo "══════════════════════════════════════════════════════════"
+    echo
+    
+    detect_available_images
+    
+    print_color "$GREEN" "✅ Image list refreshed!"
+    read -p "⏎ Press Enter to continue..."
+}
+
+# Function to show image management
+image_management() {
+    while true; do
+        print_header
+        print_color "$CYAN" "📦 Image Management"
+        echo "══════════════════════════════════════════════════════════"
+        echo
+        
+        print_color "$YELLOW" "📋 Operations:"
+        echo "  1) 🔍 List Available Images"
+        echo "  2) 🔄 Refresh Image List"
+        echo "  3) 🔎 Search Images"
+        echo "  4) 📥 Import Custom Image"
+        echo "  0) ↩️  Back"
+        echo
+        
+        read -p "🎯 Select option: " choice
+        
+        case $choice in
+            1)
+                detect_available_images
+                show_image_menu
+                read -p "⏎ Press Enter to continue..."
+                ;;
+            2)
+                refresh_images
+                ;;
+            3)
+                search_images
+                ;;
+            4)
+                print_color "$BLUE" "📥 Import Custom Image"
+                read -p "Enter image URL or local path: " image_url
+                if [[ -n "$image_url" ]]; then
+                    read -p "Enter alias for image: " image_alias
+                    if lxc image import "$image_url" --alias "$image_alias"; then
+                        print_color "$GREEN" "✅ Image imported as: $image_alias"
+                    else
+                        print_color "$RED" "❌ Failed to import image"
+                    fi
+                fi
+                read -p "⏎ Press Enter to continue..."
+                ;;
+            0)
+                return
+                ;;
+            *)
+                print_color "$RED" "❌ Invalid option!"
+                sleep 1
+                ;;
+        esac
+    done
+}
+
 # Function to install RDP tools
 install_rdp_tools() {
     print_header
@@ -835,162 +1558,43 @@ main_menu() {
     done
 }
 
-# [Keep all other existing functions as they are...]
-
-# Enhanced detect_available_images to look for Windows images
-detect_available_images() {
-    print_color "$CYAN" "🔍 Scanning for available images..."
-    echo
-    
-    # Clear previous image list
-    declare -gA AVAILABLE_IMAGES
-    AVAILABLE_IMAGES=()
-    
-    # List of remotes to check (added windows remote)
-    local remotes=("images" "ubuntu" "debian" "fedora" "centos" "almalinux" "rockylinux")
-    local image_count=0
-    
-    # First add our default Windows images
-    for key in "${!DEFAULT_IMAGES[@]}"; do
-        IFS='|' read -r image_name display_name <<< "${DEFAULT_IMAGES[$key]}"
-        if [[ "$display_name" =~ [Ww]indows ]]; then
-            ((image_count++))
-            AVAILABLE_IMAGES["$image_count"]="$image_name|$display_name"
-        fi
-    done
-    
-    # Try to get images from remotes
-    for remote in "${remotes[@]}"; do
-        print_color "$BLUE" "📡 Checking remote: $remote"
+# Function to check if LXC/LXD is ready
+check_system_ready() {
+    if ! command -v lxc &> /dev/null; then
+        print_header
+        print_color "$YELLOW" "⚠️  LXC/LXD Not Installed"
+        echo "══════════════════════════════════════════════════════════"
+        echo
+        print_color "$CYAN" "This script requires LXC/LXD to be installed."
+        echo "Would you like to install it now?"
+        echo
         
-        # Try to list images from this remote
-        local remote_images=$(timeout 10 lxc image list "$remote:" 2>/dev/null | grep -E "^\| [a-zA-Z0-9/:-]+ \|" | head -20)
+        read -p "📦 Install dependencies? (Y/n): " install_choice
+        install_choice=${install_choice:-Y}
         
-        if [[ -n "$remote_images" ]]; then
-            while IFS= read -r line; do
-                # Extract image name from line
-                local image_name=$(echo "$line" | awk -F'|' '{print $2}' | xargs)
-                local description=$(echo "$line" | awk -F'|' '{print $3}' | xargs | cut -c1-50)
-                
-                if [[ -n "$image_name" && ! "$image_name" =~ "ALIAS" && ! "$image_name" =~ "FINGERPRINT" ]]; then
-                    ((image_count++))
-                    AVAILABLE_IMAGES["$image_count"]="$remote:$image_name|$description"
-                    echo "  ✅ Found: $remote:$image_name"
-                fi
-            done <<< "$remote_images"
+        if [[ "$install_choice" =~ ^[Yy]$ ]]; then
+            install_dependencies
         else
-            echo "  ⚠️  No images found or remote not accessible"
+            print_color "$YELLOW" "⚠️  Please install LXC/LXD manually first."
+            echo "Run option 8 from the main menu later."
+            sleep 2
         fi
-    done
-    
-    # If no images found, use defaults
-    if [[ ${#AVAILABLE_IMAGES[@]} -eq 0 ]]; then
-        print_color "$YELLOW" "⚠️  Could not detect images automatically. Using defaults..."
-        AVAILABLE_IMAGES=()
-        for key in "${!DEFAULT_IMAGES[@]}"; do
-            AVAILABLE_IMAGES["$key"]="${DEFAULT_IMAGES[$key]}"
-        done
+    elif ! groups $USER | grep -q '\blxd\b'; then
+        print_header
+        print_color "$YELLOW" "⚠️  User Not in LXD Group"
+        echo "══════════════════════════════════════════════════════════"
+        echo
+        print_color "$CYAN" "Your user is not in the 'lxd' group."
+        echo "This is required to manage containers."
+        echo
+        print_color "$GREEN" "💡 Solution:"
+        echo "  1. Run: sudo usermod -aG lxd $USER"
+        echo "  2. Log out and log back in"
+        echo "  3. Run this script again"
+        echo
+        read -p "⏎ Press Enter to continue..."
+        exit 0
     fi
-    
-    echo
-    print_color "$GREEN" "✅ Found ${#AVAILABLE_IMAGES[@]} available images"
-    sleep 1
-}
-
-# Enhanced system info to show RDP info
-show_system_info() {
-    print_header
-    print_color "$CYAN" "📊 System Information"
-    echo "══════════════════════════════════════════════════════════"
-    echo
-    
-    # LXC/LXD Info
-    print_color "$YELLOW" "🚀 LXC/LXD Information:"
-    echo "──────────────────────────────────────"
-    if command -v lxc &> /dev/null; then
-        echo -n "📦 LXC Version: "
-        lxc version 2>/dev/null || echo "Unknown"
-        
-        # Container count
-        local container_count=$(lxc list --format csv 2>/dev/null | wc -l)
-        echo "📦 Containers: $container_count"
-        
-        # Check for Windows containers
-        local windows_containers=$(lxc list --format csv 2>/dev/null | grep -i windows | wc -l)
-        if [[ $windows_containers -gt 0 ]]; then
-            echo "🖥️  Windows Containers: $windows_containers"
-        fi
-        
-        # Storage pools
-        echo "💾 Storage Pools:"
-        lxc storage list 2>/dev/null | head -5 || echo "  Not available"
-        
-        # Networks
-        echo "🌐 Networks:"
-        lxc network list 2>/dev/null | head -5 || echo "  Not available"
-    else
-        echo "❌ LXC not installed"
-    fi
-    
-    # RDP Tools check
-    echo
-    print_color "$YELLOW" "🌐 RDP Support:"
-    echo "──────────────────────────────────────"
-    if command -v xfreerdp &> /dev/null; then
-        echo "✅ FreeRDP installed"
-    else
-        echo "❌ FreeRDP not installed"
-    fi
-    
-    if command -v remmina &> /dev/null; then
-        echo "✅ Remmina installed"
-    else
-        echo "❌ Remmina not installed"
-    fi
-    
-    # Windows virtualization support
-    echo
-    print_color "$YELLOW" "🖥️  Windows Virtualization:"
-    echo "──────────────────────────────────────"
-    if command -v virt-manager &> /dev/null; then
-        echo "✅ virt-manager installed"
-    else
-        echo "❌ virt-manager not installed (recommended for Windows)"
-    fi
-    
-    if [[ -c /dev/kvm ]]; then
-        echo "✅ KVM acceleration available"
-    else
-        echo "⚠️  KVM not available (Windows VMs may be slow)"
-    fi
-    
-    # System Info
-    echo
-    print_color "$YELLOW" "💻 System Information:"
-    echo "──────────────────────────────────────"
-    
-    # OS info
-    if [[ -f /etc/os-release ]]; then
-        source /etc/os-release
-        echo "🏷️  OS: $PRETTY_NAME"
-    fi
-    
-    # Kernel
-    echo "🐧 Kernel: $(uname -r)"
-    
-    # CPU
-    echo "⚡ CPU: $(nproc) cores"
-    echo "💾 Memory: $(free -h | awk '/^Mem:/ {print $2}') total"
-    echo "💿 Disk: $(df -h / | awk 'NR==2 {print $4}') free"
-    
-    echo
-    print_color "$CYAN" "🔧 Quick Commands:"
-    echo "  lxc list                   # List all containers"
-    echo "  xfreerdp /v:[IP] /u:[USER] # Connect via RDP"
-    echo "  virt-manager               # GUI for Windows VMs"
-    echo "  sudo lxd init --auto       # Initialize LXD"
-    
-    read -p "⏎ Press Enter to continue..."
 }
 
 # Main function
