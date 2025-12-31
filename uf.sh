@@ -1200,5 +1200,4 @@ main() {
     main_menu
 }
 
-# Run main
-main
+
