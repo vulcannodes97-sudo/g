@@ -1,12 +1,6 @@
 #!/bin/bash
 set -e
 
-# ==============================
-# VARIABLES
-# ==============================
-DB_NAME=featherpanel
-DB_USER=featherpanel
-DB_PASS=1234
 
 # ==============================
 # DOMAIN INPUT
@@ -30,39 +24,44 @@ CODENAME=$VERSION_CODENAME
 echo "🧠 OS Detected: $OS ($CODENAME)"
 
 # ==============================
-# UPDATE SYSTEM
-# ==============================
-apt update && apt upgrade -y
-
-# ==============================
 # BASE REPOS
 # ==============================
 if [[ "$OS" == "ubuntu" ]]; then
-  apt install -y software-properties-common curl apt-transport-https ca-certificates gnupg
+   # Update the server
+  apt update && apt upgrade -y
+  # Add "add-apt-repository" command
+  apt -y install software-properties-common curl apt-transport-https ca-certificates gnupg
+  # Add additional repositories for PHP, Redis, and MariaDB
   LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php
+  # Update repositories list
   apt update
-  apt-add-repository -y universe || true
+  # Add universe repository if you are on Ubuntu 18.04
+  apt-add-repository universe
+  # Install Dependencies
+  apt -y install php8.5 php8.5-{common,cli,gd,mysql,mbstring,bcmath,xml,fpm,curl,zip,redis,mongodb,pgsql,pdo-pgsql} mariadb-server nginx tar unzip zip git redis-server make dos2unix || true
 elif [[ "$OS" == "debian" ]]; then
-  apt install -y software-properties-common curl ca-certificates gnupg2 sudo lsb-release make
-  echo "deb https://packages.sury.org/php/ $CODENAME main" \
-    | tee /etc/apt/sources.list.d/sury-php.list
-  curl -fsSL https://packages.sury.org/php/apt.gpg \
-    | gpg --dearmor -o /etc/apt/trusted.gpg.d/sury-keyring.gpg
+   # Update the server
+  apt update && apt upgrade -y
+  # Install necessary packages
+  apt -y install software-properties-common curl ca-certificates gnupg2 sudo lsb-release make
+  # Add additional repositories for PHP, Redis, and MariaDB
+  echo "deb https://packages.sury.org/php/ $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/sury-php.list
+  curl -fsSL https://packages.sury.org/php/ apt.gpg | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/sury-keyring.gpg
+  # Update repositories list
   apt update
+  # Install PHP and required extensions
+  apt install -y php8.5 php8.5-{common,cli,gd,mysql,mbstring,bcmath,xml,fpm,curl,zip,redis,mongodb,pgsql,pdo-pgsql}
+  # MariaDB repo setup script
+  curl -LsS https://r.mariadb.com/downloads/mariadb_repo_setup | sudo bash
+  # Install the rest of dependencies
+  apt install -y mariadb-server nginx tar unzip git redis-server zip dos2unix
 else
   echo "❌ Unsupported OS"
   exit 1
 fi
 
-# ==============================
-# INSTALL STACK
-# ==============================
-apt install -y \
-php8.5 php8.5-{common,cli,gd,mysql,mbstring,bcmath,xml,fpm,curl,zip,redis,mongodb,pgsql,pdo-pgsql} \
-mariadb-server nginx redis-server \
-tar unzip zip git dos2unix
+===========================================================================
 
-systemctl enable --now nginx mariadb redis-server php8.5-fpm
 
 # ==============================
 # COMPOSER
@@ -76,13 +75,13 @@ curl -sS https://getcomposer.org/installer \
 apt install -y nodejs npm
 npm install -g n
 n lts
-
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-
+export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+nvm --version
 nvm install --lts
 npm install -g pnpm npm-check-updates
+pnpm --version
 
 # ==============================
 # FEATHERPANEL
@@ -90,17 +89,20 @@ npm install -g pnpm npm-check-updates
 mkdir -p /var/www
 cd /var/www
 git clone https://github.com/mythicalltd/featherpanel.git featherpanel
-chown -R www-data:www-data /var/www/featherpanel
+chown -R www-data:www-data /var/www/featherpanel/*
+cd /var/www/featherpanel
 
 # ==============================
 # BACKEND
 # ==============================
-COMPOSER_ALLOW_SUPERUSER=1 composer install \
- --working-dir=/var/www/featherpanel/backend
-
+COMPOSER_ALLOW_SUPERUSER=1 composer install --working-dir=/var/www/featherpanel/backend
+pnpm install --dir /var/www/featherpanel/frontend/
 # ==============================
 # DATABASE
 # ==============================
+DB_NAME=featherpanel
+DB_USER=featherpanel
+DB_PASS=1234
 mariadb -e "CREATE DATABASE IF NOT EXISTS ${DB_NAME};"
 mariadb -e "CREATE USER IF NOT EXISTS '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${DB_PASS}';"
 mariadb -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'127.0.0.1' WITH GRANT OPTION;"
@@ -117,15 +119,12 @@ mariadb -e "FLUSH PRIVILEGES;"
 # ==============================
 # APP SETUP
 # ==============================
-cd /var/www/featherpanel/backend
 php app setup
 php app migrate
-
 # ==============================
 # FRONTEND
 # ==============================
 cd /var/www/featherpanel/frontend
-pnpm install
 pnpm build
 
 # ==============================
