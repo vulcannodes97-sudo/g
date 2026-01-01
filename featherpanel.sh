@@ -137,7 +137,17 @@ ok "Panel cloned"
 step "Installing backend dependencies"
 COMPOSER_ALLOW_SUPERUSER=1 composer install --working-dir=/var/www/featherpanel/backend
 ok "Backend ready"
-
+# ==============================
+# FRONTEND
+# ==============================
+step "Building frontend UI"
+cd /var/www/featherpanel/frontend
+pnpm install --dir /var/www/featherpanel/frontend/
+php app setup
+php app migrate
+cd /var/www/featherpanel/frontend
+pnpm build
+ok "Frontend built"
 # ==============================
 # DATABASE
 # ==============================
