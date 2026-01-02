@@ -8,7 +8,7 @@
 
 # if you use Ubuntu
 
-
+sudo usermod -aG lxd root
 # Color codes for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
