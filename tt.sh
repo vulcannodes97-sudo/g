@@ -3,24 +3,32 @@ set -euo pipefail
 
 # =============================
 # Enhanced Multi-VM Manager
+# Now with Windows 10 Support!
 # =============================
 
 # Function to display header
 display_header() {
     clear
     cat << "EOF"
- ███████████                            █████   █████                    ████ 
-░░███░░░░░███                          ░░███   ░░███                    ░░███ 
- ░███    ░███  █████ ████ ████████      ░███    ░███  █████████████      ░███ 
- ░██████████  ░░███ ░███ ░░███░░███     ░███    ░███ ░░███░░███░░███     ░███ 
- ░███░░░░░███  ░███ ░███  ░███ ░███     ░░███   ███   ░███ ░███ ░███     ░███ 
- ░███    ░███  ░███ ░███  ░███ ░███      ░░░█████░    ░███ ░███ ░███     ░███ 
- █████   █████ ░░████████ ████ █████       ░░███      █████░███ █████    █████
-░░░░░   ░░░░░   ░░░░░░░░ ░░░░ ░░░░░         ░░░      ░░░░░ ░░░ ░░░░░    ░░░░░ 
-                                                                 
-                                                                           
-                                                                                                                                                                 
+███████ ███████ ███    ███ ██    ██     ██     ██ ███    ██ 
+██      ██      ████  ████  ██  ██      ██     ██ ████   ██ 
+█████   █████   ██ ████ ██   ████       ██  █  ██ ██ ██  ██ 
+██      ██      ██  ██  ██    ██        ██ ███ ██ ██  ██ ██ 
+██      ███████ ██      ██    ██         ███ ███  ██   ████ 
+                                                            
+ ██████  ██████  ███    ███ ███    ██                       
+██    ██ ██   ██ ████  ████ ████   ██                       
+██    ██ ██████  ██ ████ ██ ██ ██  ██                       
+██    ██ ██   ██ ██  ██  ██ ██  ██ ██                       
+ ██████  ██████  ██      ██ ██   ████                       
+
+ ██████  ██    ██ ███    ███  ██████  ███████ ███████       
+██    ██ ██    ██ ████  ████ ██       ██      ██            
+██    ██ ██    ██ ██ ████ ██ ██   ███ █████   ███████       
+██    ██ ██    ██ ██  ██  ██ ██    ██ ██           ██       
+ ██████   ██████  ██      ██  ██████  ███████ ███████       
 EOF
+    echo "                   🤖 Now with Windows 10 Support! 🪟"
     echo
 }
 
@@ -35,6 +43,7 @@ print_status() {
         "ERROR") echo -e "\033[1;31m❌ [ERROR]\033[0m $message" ;;
         "SUCCESS") echo -e "\033[1;32m✅ [SUCCESS]\033[0m $message" ;;
         "INPUT") echo -e "\033[1;36m🎯 [INPUT]\033[0m $message" ;;
+        "WINDOWS") echo -e "\033[1;35m🪟 [WINDOWS]\033[0m $message" ;;
         *) echo "[$type] $message" ;;
     esac
 }
@@ -64,9 +73,9 @@ display_vm_table() {
         return
     fi
     
-    echo "┌──────┬────────────────────┬──────────┬─────────────┬──────────┬──────────┐"
-    printf "│ %-4s │ %-18s │ %-8s │ %-11s │ %-8s │ %-8s │\n" "No." "VM Name" "Status" "OS Type" "Memory" "Disk"
-    echo "├──────┼────────────────────┼──────────┼─────────────┼──────────┼──────────┤"
+    echo "┌──────┬────────────────────┬──────────┬─────────────┬──────────┬──────────┬──────────┐"
+    printf "│ %-4s │ %-18s │ %-8s │ %-11s │ %-8s │ %-8s │ %-8s │\n" "No." "VM Name" "Status" "OS Type" "Memory" "Disk" "Mode"
+    echo "├──────┼────────────────────┼──────────┼─────────────┼──────────┼──────────┼──────────┤"
     
     for i in "${!vms[@]}"; do
         if load_vm_config "${vms[$i]}" 2>/dev/null; then
@@ -74,15 +83,24 @@ display_vm_table() {
             if is_vm_running "${vms[$i]}"; then
                 status="🚀 Running"
             fi
-            printf "│ %-4d │ %-18s │ %-8s │ %-11s │ %-8s │ %-8s │\n" \
-                $((i+1)) "${vms[$i]}" "$status" "${OS_TYPE:0:11}" "$MEMORY MB" "$DISK_SIZE"
+            
+            local vm_mode="CLI"
+            if [[ "$GUI_MODE" == true ]]; then
+                vm_mode="GUI"
+            fi
+            if [[ "$OS_TYPE" == "windows" ]]; then
+                vm_mode="🪟 GUI"
+            fi
+            
+            printf "│ %-4d │ %-18s │ %-8s │ %-11s │ %-8s │ %-8s │ %-8s │\n" \
+                $((i+1)) "${vms[$i]}" "$status" "${OS_TYPE:0:11}" "$MEMORY MB" "$DISK_SIZE" "$vm_mode"
         else
-            printf "│ %-4d │ %-18s │ %-8s │ %-11s │ %-8s │ %-8s │\n" \
-                $((i+1)) "${vms[$i]}" "❓ Unknown" "N/A" "N/A" "N/A"
+            printf "│ %-4d │ %-18s │ %-8s │ %-11s │ %-8s │ %-8s │ %-8s │\n" \
+                $((i+1)) "${vms[$i]}" "❓ Unknown" "N/A" "N/A" "N/A" "N/A"
         fi
     done
     
-    echo "└──────┴────────────────────┴──────────┴─────────────┴──────────┴──────────┘"
+    echo "└──────┴────────────────────┴──────────┴─────────────┴──────────┴──────────┴──────────┘"
 }
 
 # Function to check if image file is locked
@@ -184,7 +202,7 @@ validate_input() {
 
 # Function to check dependencies
 check_dependencies() {
-    local deps=("qemu-system-x86_64" "wget" "cloud-localds" "qemu-img" "lsof")
+    local deps=("qemu-system-x86_64" "wget" "qemu-img" "lsof")
     local missing_deps=()
     
     for dep in "${deps[@]}"; do
@@ -193,9 +211,15 @@ check_dependencies() {
         fi
     done
     
+    # Check for cloud-localds only if not Windows
+    if ! command -v "cloud-localds" &> /dev/null; then
+        print_status "WARN" "⚠️  cloud-localds not found. Linux VMs will need manual setup."
+        print_status "INFO" "💡 Install with: sudo apt install cloud-image-utils"
+    fi
+    
     if [ ${#missing_deps[@]} -ne 0 ]; then
         print_status "ERROR" "🔧 Missing dependencies: ${missing_deps[*]}"
-        print_status "INFO" "💡 On Ubuntu/Debian, try: sudo apt install qemu-system cloud-image-utils wget lsof"
+        print_status "INFO" "💡 On Ubuntu/Debian, try: sudo apt install qemu-system wget lsof"
         exit 1
     fi
 }
@@ -220,6 +244,7 @@ load_vm_config() {
         # Clear previous variables
         unset VM_NAME OS_TYPE CODENAME IMG_URL HOSTNAME USERNAME PASSWORD
         unset DISK_SIZE MEMORY CPUS SSH_PORT GUI_MODE PORT_FORWARDS IMG_FILE SEED_FILE CREATED
+        unset ISO_FILE VM_TYPE VIRTIO_DRIVERS
         
         source "$config_file"
         return 0
@@ -250,6 +275,9 @@ PORT_FORWARDS="$PORT_FORWARDS"
 IMG_FILE="$IMG_FILE"
 SEED_FILE="$SEED_FILE"
 CREATED="$CREATED"
+ISO_FILE="$ISO_FILE"
+VM_TYPE="$VM_TYPE"
+VIRTIO_DRIVERS="$VIRTIO_DRIVERS"
 EOF
     
     print_status "SUCCESS" "💾 Configuration saved to $config_file"
@@ -259,7 +287,7 @@ EOF
 create_new_vm() {
     print_status "INFO" "🆕 Creating a new VM"
     
-    # OS Selection
+    # OS Selection with Windows option
     print_status "INFO" "🌍 Select an OS to set up:"
     local os_options=()
     local i=1
@@ -274,6 +302,14 @@ create_new_vm() {
         if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#OS_OPTIONS[@]} ]; then
             local os="${os_options[$choice]}"
             IFS='|' read -r OS_TYPE CODENAME IMG_URL DEFAULT_HOSTNAME DEFAULT_USERNAME DEFAULT_PASSWORD <<< "${OS_OPTIONS[$os]}"
+            
+            # Check if Windows
+            if [[ "$OS_TYPE" == "windows" ]]; then
+                print_status "WINDOWS" "🪟 Windows 10 Lite Edition selected"
+                VM_TYPE="windows"
+            else
+                VM_TYPE="linux"
+            fi
             break
         else
             print_status "ERROR" "❌ Invalid selection. Try again."
@@ -294,90 +330,131 @@ create_new_vm() {
         fi
     done
 
-    while true; do
-        read -p "$(print_status "INPUT" "🏠 Enter hostname (default: $VM_NAME): ")" HOSTNAME
-        HOSTNAME="${HOSTNAME:-$VM_NAME}"
-        if validate_input "name" "$HOSTNAME"; then
-            break
-        fi
-    done
+    # Different inputs for Windows vs Linux
+    if [[ "$VM_TYPE" == "windows" ]]; then
+        # Windows specific settings
+        HOSTNAME="$VM_NAME"
+        USERNAME="Administrator"
+        PASSWORD="Passw0rd!"
+        
+        print_status "WINDOWS" "🪟 Windows VM Settings:"
+        echo "  👤 Username: $USERNAME (default)"
+        echo "  🔑 Password: $PASSWORD (default)"
+        echo "  💡 You can change these during Windows installation"
+    else
+        # Linux settings
+        while true; do
+            read -p "$(print_status "INPUT" "🏠 Enter hostname (default: $VM_NAME): ")" HOSTNAME
+            HOSTNAME="${HOSTNAME:-$VM_NAME}"
+            if validate_input "name" "$HOSTNAME"; then
+                break
+            fi
+        done
 
-    while true; do
-        read -p "$(print_status "INPUT" "👤 Enter username (default: $DEFAULT_USERNAME): ")" USERNAME
-        USERNAME="${USERNAME:-$DEFAULT_USERNAME}"
-        if validate_input "username" "$USERNAME"; then
-            break
-        fi
-    done
+        while true; do
+            read -p "$(print_status "INPUT" "👤 Enter username (default: $DEFAULT_USERNAME): ")" USERNAME
+            USERNAME="${USERNAME:-$DEFAULT_USERNAME}"
+            if validate_input "username" "$USERNAME"; then
+                break
+            fi
+        done
 
-    while true; do
-        read -s -p "$(print_status "INPUT" "🔑 Enter password (default: $DEFAULT_PASSWORD): ")" PASSWORD
-        PASSWORD="${PASSWORD:-$DEFAULT_PASSWORD}"
-        echo
-        if [ -n "$PASSWORD" ]; then
-            break
-        else
-            print_status "ERROR" "❌ Password cannot be empty"
-        fi
-    done
+        while true; do
+            read -s -p "$(print_status "INPUT" "🔑 Enter password (default: $DEFAULT_PASSWORD): ")" PASSWORD
+            PASSWORD="${PASSWORD:-$DEFAULT_PASSWORD}"
+            echo
+            if [ -n "$PASSWORD" ]; then
+                break
+            else
+                print_status "ERROR" "❌ Password cannot be empty"
+            fi
+        done
+    fi
 
+    # Common settings
     while true; do
-        read -p "$(print_status "INPUT" "💾 Disk size (default: 20G): ")" DISK_SIZE
-        DISK_SIZE="${DISK_SIZE:-20G}"
+        read -p "$(print_status "INPUT" "💾 Disk size (default: ${VM_TYPE}_DISK_DEFAULT): ")" DISK_SIZE
+        DISK_SIZE="${DISK_SIZE:-${VM_TYPE}_DISK_DEFAULT}"
         if validate_input "size" "$DISK_SIZE"; then
             break
         fi
     done
 
     while true; do
-        read -p "$(print_status "INPUT" "🧠 Memory in MB (default: 2048): ")" MEMORY
-        MEMORY="${MEMORY:-2048}"
+        read -p "$(print_status "INPUT" "🧠 Memory in MB (default: ${VM_TYPE}_MEMORY_DEFAULT): ")" MEMORY
+        MEMORY="${MEMORY:-${VM_TYPE}_MEMORY_DEFAULT}"
         if validate_input "number" "$MEMORY"; then
             break
         fi
     done
 
     while true; do
-        read -p "$(print_status "INPUT" "⚡ Number of CPUs (default: 2): ")" CPUS
-        CPUS="${CPUS:-2}"
+        read -p "$(print_status "INPUT" "⚡ Number of CPUs (default: ${VM_TYPE}_CPUS_DEFAULT): ")" CPUS
+        CPUS="${CPUS:-${VM_TYPE}_CPUS_DEFAULT}"
         if validate_input "number" "$CPUS"; then
             break
         fi
     done
 
-    while true; do
-        read -p "$(print_status "INPUT" "🔌 SSH Port (default: 2222): ")" SSH_PORT
-        SSH_PORT="${SSH_PORT:-2222}"
-        if validate_input "port" "$SSH_PORT"; then
-            # Check if port is already in use
-            if ss -tln 2>/dev/null | grep -q ":$SSH_PORT "; then
-                print_status "ERROR" "🚫 Port $SSH_PORT is already in use"
-            else
-                break
+    # SSH port only for Linux
+    if [[ "$VM_TYPE" == "linux" ]]; then
+        while true; do
+            read -p "$(print_status "INPUT" "🔌 SSH Port (default: 2222): ")" SSH_PORT
+            SSH_PORT="${SSH_PORT:-2222}"
+            if validate_input "port" "$SSH_PORT"; then
+                # Check if port is already in use
+                if ss -tln 2>/dev/null | grep -q ":$SSH_PORT "; then
+                    print_status "ERROR" "🚫 Port $SSH_PORT is already in use"
+                else
+                    break
+                fi
             fi
-        fi
-    done
+        done
+    else
+        SSH_PORT=""
+    fi
 
-    while true; do
-        read -p "$(print_status "INPUT" "🖥️  Enable GUI mode? (y/n, default: n): ")" gui_input
-        GUI_MODE=false
-        gui_input="${gui_input:-n}"
-        if [[ "$gui_input" =~ ^[Yy]$ ]]; then 
-            GUI_MODE=true
-            break
-        elif [[ "$gui_input" =~ ^[Nn]$ ]]; then
-            break
-        else
-            print_status "ERROR" "❌ Please answer y or n"
-        fi
-    done
+    # GUI mode (always true for Windows, optional for Linux)
+    if [[ "$VM_TYPE" == "windows" ]]; then
+        GUI_MODE=true
+        print_status "WINDOWS" "🖥️  Windows VMs always run in GUI mode"
+    else
+        while true; do
+            read -p "$(print_status "INPUT" "🖥️  Enable GUI mode? (y/n, default: n): ")" gui_input
+            GUI_MODE=false
+            gui_input="${gui_input:-n}"
+            if [[ "$gui_input" =~ ^[Yy]$ ]]; then 
+                GUI_MODE=true
+                break
+            elif [[ "$gui_input" =~ ^[Nn]$ ]]; then
+                break
+            else
+                print_status "ERROR" "❌ Please answer y or n"
+            fi
+        done
+    fi
 
     # Additional network options
-    read -p "$(print_status "INPUT" "🌐 Additional port forwards (e.g., 8080:80, press Enter for none): ")" PORT_FORWARDS
+    if [[ "$VM_TYPE" == "linux" ]]; then
+        read -p "$(print_status "INPUT" "🌐 Additional port forwards (e.g., 8080:80, press Enter for none): ")" PORT_FORWARDS
+    else
+        # Default RDP port for Windows
+        PORT_FORWARDS="3389:3389"
+        print_status "WINDOWS" "🌐 RDP port 3389 will be forwarded for remote desktop access"
+    fi
 
     IMG_FILE="$VM_DIR/$VM_NAME.img"
     SEED_FILE="$VM_DIR/$VM_NAME-seed.iso"
     CREATED="$(date)"
+    
+    # Windows ISO file
+    if [[ "$VM_TYPE" == "windows" ]]; then
+        ISO_FILE="$VM_DIR/$VM_NAME.iso"
+        VIRTIO_DRIVERS="$VM_DIR/virtio-win.iso"
+    else
+        ISO_FILE=""
+        VIRTIO_DRIVERS=""
+    fi
 
     # Download and setup VM image
     setup_vm_image
@@ -393,6 +470,15 @@ setup_vm_image() {
     # Create VM directory if it doesn't exist
     mkdir -p "$VM_DIR"
     
+    if [[ "$VM_TYPE" == "windows" ]]; then
+        setup_windows_vm
+    else
+        setup_linux_vm
+    fi
+}
+
+# Function to setup Linux VM
+setup_linux_vm() {
     # Check if image already exists
     if [[ -f "$IMG_FILE" ]]; then
         print_status "INFO" "✅ Image file already exists. Skipping download."
@@ -417,7 +503,7 @@ setup_vm_image() {
         fi
     fi
 
-    # cloud-init configuration
+    # cloud-init configuration for Linux
     cat > user-data <<EOF
 #cloud-config
 hostname: $HOSTNAME
@@ -440,14 +526,84 @@ instance-id: iid-$VM_NAME
 local-hostname: $HOSTNAME
 EOF
 
-    if ! cloud-localds "$SEED_FILE" user-data meta-data; then
-        print_status "ERROR" "❌ Failed to create cloud-init seed image"
-        exit 1
+    if command -v cloud-localds &> /dev/null; then
+        if ! cloud-localds "$SEED_FILE" user-data meta-data; then
+            print_status "ERROR" "❌ Failed to create cloud-init seed image"
+            exit 1
+        fi
+    else
+        print_status "WARN" "⚠️  cloud-localds not found. Creating empty seed image..."
+        dd if=/dev/zero of="$SEED_FILE" bs=1M count=1
     fi
     
-    print_status "SUCCESS" "🎉 VM '$VM_NAME' created successfully."
+    print_status "SUCCESS" "🎉 Linux VM '$VM_NAME' created successfully."
     print_status "INFO" "🔑 Login with: username=$USERNAME, password=$PASSWORD"
     print_status "INFO" "🔌 SSH: ssh -p $SSH_PORT $USERNAME@localhost"
+}
+
+# Function to setup Windows VM
+setup_windows_vm() {
+    print_status "WINDOWS" "🪟 Setting up Windows 10 VM..."
+    
+    # Download Windows ISO if needed
+    if [[ ! -f "$ISO_FILE" ]]; then
+        print_status "WINDOWS" "📥 Downloading Windows 10 Lite Edition ISO (3.5GB)..."
+        print_status "WINDOWS" "⏳ This may take a while depending on your internet speed..."
+        
+        # Create download directory
+        mkdir -p "$VM_DIR/downloads"
+        
+        if ! wget --progress=bar:force \
+                  --timeout=60 \
+                  --tries=3 \
+                  "https://archive.org/download/windows-10-lite-edition-19h2-x64/Windows%2010%20Lite%20Edition%2019H2%20x64.iso" \
+                  -O "$ISO_FILE.tmp"; then
+            print_status "ERROR" "❌ Failed to download Windows ISO"
+            print_status "INFO" "💡 You can manually download the ISO and place it at: $ISO_FILE"
+            print_status "INFO" "🔗 URL: https://archive.org/download/windows-10-lite-edition-19h2-x64/Windows%2010%20Lite%20Edition%2019H2%20x64.iso"
+            exit 1
+        fi
+        mv "$ISO_FILE.tmp" "$ISO_FILE"
+        print_status "SUCCESS" "✅ Windows ISO downloaded successfully"
+    else
+        print_status "INFO" "✅ Windows ISO already exists. Skipping download."
+    fi
+    
+    # Download VirtIO drivers for Windows
+    if [[ ! -f "$VIRTIO_DRIVERS" ]]; then
+        print_status "WINDOWS" "📥 Downloading VirtIO drivers for Windows..."
+        if ! wget --progress=bar:force \
+                  "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso" \
+                  -O "$VIRTIO_DRIVERS.tmp"; then
+            print_status "WARN" "⚠️  Failed to download VirtIO drivers"
+            print_status "INFO" "💡 Windows installation may work without them, but performance will be better with VirtIO"
+            VIRTIO_DRIVERS=""
+        else
+            mv "$VIRTIO_DRIVERS.tmp" "$VIRTIO_DRIVERS"
+            print_status "SUCCESS" "✅ VirtIO drivers downloaded"
+        fi
+    fi
+    
+    # Create disk image
+    if [[ ! -f "$IMG_FILE" ]]; then
+        print_status "WINDOWS" "💾 Creating $DISK_SIZE disk image..."
+        qemu-img create -f qcow2 "$IMG_FILE" "$DISK_SIZE"
+    else
+        print_status "INFO" "✅ Disk image already exists."
+    fi
+    
+    print_status "SUCCESS" "🎉 Windows VM '$VM_NAME' created successfully."
+    print_status "WINDOWS" "🖥️  Start the VM to begin Windows installation"
+    print_status "WINDOWS" "💡 During installation:"
+    echo "   1. Select your language and region"
+    echo "   2. When asked for product key, click 'I don't have a product key'"
+    echo "   3. Select 'Windows 10 Pro' edition"
+    echo "   4. Choose 'Custom: Install Windows only (advanced)'"
+    echo "   5. Select the empty drive and click Next"
+    echo "   6. Wait for installation to complete"
+    echo "   7. Create user: $USERNAME with password: $PASSWORD"
+    print_status "WINDOWS" "🌐 After installation, use RDP to connect:"
+    echo "   Remote Desktop Connection -> localhost:3389"
 }
 
 # Function to start a VM
@@ -456,7 +612,7 @@ start_vm() {
     
     if load_vm_config "$vm_name"; then
         # Check if image is already in use
-        if ! check_image_lock "$IMG_FILE" "$vm_name"; then
+        if [[ -f "$IMG_FILE" ]] && ! check_image_lock "$IMG_FILE" "$vm_name"; then
             print_status "ERROR" "🔒 Cannot start VM: Image file is locked by another process"
             if confirm_action "🔄 Do you want to force kill all QEMU processes using this image?"; then
                 pkill -f "qemu-system.*$IMG_FILE"
@@ -483,76 +639,174 @@ start_vm() {
             fi
         fi
         
-        print_status "INFO" "🚀 Starting VM: $vm_name"
-        print_status "INFO" "🔌 SSH: ssh -p $SSH_PORT $USERNAME@localhost"
-        print_status "INFO" "🔑 Password: $PASSWORD"
-        
-        # Check if image file exists
-        if [[ ! -f "$IMG_FILE" ]]; then
-            print_status "ERROR" "❌ VM image file not found: $IMG_FILE"
-            return 1
-        fi
-        
-        # Check if seed file exists
-        if [[ ! -f "$SEED_FILE" ]]; then
-            print_status "WARN" "⚠️  Seed file not found, recreating..."
-            setup_vm_image
-        fi
-        
-        # Base QEMU command
-        local qemu_cmd=(
-            qemu-system-x86_64
-            -enable-kvm
-            -m "$MEMORY"
-            -smp "$CPUS"
-            -cpu host
-            -drive "file=$IMG_FILE,format=qcow2,if=virtio"
-            -drive "file=$SEED_FILE,format=raw,if=virtio"
-            -boot order=c
-            -device virtio-net-pci,netdev=n0
-            -netdev "user,id=n0,hostfwd=tcp::$SSH_PORT-:22"
-        )
-
-        # Add port forwards if specified
-        if [[ -n "$PORT_FORWARDS" ]]; then
-            IFS=',' read -ra forwards <<< "$PORT_FORWARDS"
-            for forward in "${forwards[@]}"; do
-                IFS=':' read -r host_port guest_port <<< "$forward"
-                qemu_cmd+=(-device "virtio-net-pci,netdev=n${#qemu_cmd[@]}")
-                qemu_cmd+=(-netdev "user,id=n${#qemu_cmd[@]},hostfwd=tcp::$host_port-:$guest_port")
-            done
-        fi
-
-        # Add GUI or console mode
-        if [[ "$GUI_MODE" == true ]]; then
-            qemu_cmd+=(-vga virtio -display gtk,gl=on)
-            print_status "INFO" "🖥️  Starting in GUI mode..."
+        if [[ "$VM_TYPE" == "windows" ]]; then
+            start_windows_vm "$vm_name"
         else
-            qemu_cmd+=(-nographic -serial mon:stdio)
-            print_status "INFO" "📟 Starting in console mode..."
-            print_status "INFO" "🛑 Press Ctrl+A then X to exit QEMU console"
+            start_linux_vm "$vm_name"
         fi
-
-        # Add performance enhancements
-        qemu_cmd+=(
-            -device virtio-balloon-pci
-            -object rng-random,filename=/dev/urandom,id=rng0
-            -device virtio-rng-pci,rng=rng0
-        )
-
-        print_status "INFO" "⚡ Starting QEMU..."
-        echo "📊 Configuration: ${MEMORY}MB RAM, ${CPUS} CPUs, ${DISK_SIZE} disk"
-        
-        # Start the VM
-        if ! "${qemu_cmd[@]}"; then
-            print_status "ERROR" "❌ Failed to start VM. There might be a problem with the image file or configuration."
-            # Try to clean up lock files
-            rm -f "${IMG_FILE}.lock" 2>/dev/null
-            return 1
-        fi
-        
-        print_status "INFO" "🛑 VM $vm_name has been shut down"
     fi
+}
+
+# Function to start Linux VM
+start_linux_vm() {
+    local vm_name=$1
+    
+    print_status "INFO" "🚀 Starting Linux VM: $vm_name"
+    print_status "INFO" "🔌 SSH: ssh -p $SSH_PORT $USERNAME@localhost"
+    print_status "INFO" "🔑 Password: $PASSWORD"
+    
+    # Check if image file exists
+    if [[ ! -f "$IMG_FILE" ]]; then
+        print_status "ERROR" "❌ VM image file not found: $IMG_FILE"
+        return 1
+    fi
+    
+    # Check if seed file exists
+    if [[ ! -f "$SEED_FILE" ]]; then
+        print_status "WARN" "⚠️  Seed file not found, recreating..."
+        setup_vm_image
+    fi
+    
+    # Base QEMU command for Linux
+    local qemu_cmd=(
+        qemu-system-x86_64
+        -enable-kvm
+        -m "$MEMORY"
+        -smp "$CPUS"
+        -cpu host
+        -drive "file=$IMG_FILE,format=qcow2,if=virtio"
+        -drive "file=$SEED_FILE,format=raw,if=virtio"
+        -boot order=c
+        -device virtio-net-pci,netdev=n0
+        -netdev "user,id=n0,hostfwd=tcp::$SSH_PORT-:22"
+    )
+
+    # Add port forwards if specified
+    if [[ -n "$PORT_FORWARDS" ]]; then
+        IFS=',' read -ra forwards <<< "$PORT_FORWARDS"
+        for forward in "${forwards[@]}"; do
+            IFS=':' read -r host_port guest_port <<< "$forward"
+            qemu_cmd+=(-device "virtio-net-pci,netdev=n${#qemu_cmd[@]}")
+            qemu_cmd+=(-netdev "user,id=n${#qemu_cmd[@]},hostfwd=tcp::$host_port-:$guest_port")
+        done
+    fi
+
+    # Add GUI or console mode
+    if [[ "$GUI_MODE" == true ]]; then
+        qemu_cmd+=(-vga virtio -display gtk,gl=on)
+        print_status "INFO" "🖥️  Starting in GUI mode..."
+    else
+        qemu_cmd+=(-nographic -serial mon:stdio)
+        print_status "INFO" "📟 Starting in console mode..."
+        print_status "INFO" "🛑 Press Ctrl+A then X to exit QEMU console"
+    fi
+
+    # Add performance enhancements
+    qemu_cmd+=(
+        -device virtio-balloon-pci
+        -object rng-random,filename=/dev/urandom,id=rng0
+        -device virtio-rng-pci,rng=rng0
+    )
+
+    print_status "INFO" "⚡ Starting QEMU..."
+    echo "📊 Configuration: ${MEMORY}MB RAM, ${CPUS} CPUs, ${DISK_SIZE} disk"
+    
+    # Start the VM
+    if ! "${qemu_cmd[@]}"; then
+        print_status "ERROR" "❌ Failed to start VM. There might be a problem with the image file or configuration."
+        # Try to clean up lock files
+        rm -f "${IMG_FILE}.lock" 2>/dev/null
+        return 1
+    fi
+    
+    print_status "INFO" "🛑 VM $vm_name has been shut down"
+}
+
+# Function to start Windows VM
+start_windows_vm() {
+    local vm_name=$1
+    
+    print_status "WINDOWS" "🚀 Starting Windows VM: $vm_name"
+    print_status "WINDOWS" "🖥️  Windows installation will begin..."
+    print_status "WINDOWS" "🌐 After installation, connect via RDP: localhost:3389"
+    
+    # Check if ISO exists
+    if [[ ! -f "$ISO_FILE" ]]; then
+        print_status "ERROR" "❌ Windows ISO file not found: $ISO_FILE"
+        print_status "INFO" "💡 Download it manually from:"
+        echo "   https://archive.org/download/windows-10-lite-edition-19h2-x64/Windows%2010%20Lite%20Edition%2019H2%20x64.iso"
+        echo "   And place it at: $ISO_FILE"
+        return 1
+    fi
+    
+    # Check if disk exists
+    if [[ ! -f "$IMG_FILE" ]]; then
+        print_status "WINDOWS" "💾 Creating new disk image..."
+        qemu-img create -f qcow2 "$IMG_FILE" "$DISK_SIZE"
+    fi
+    
+    # Windows QEMU command
+    local qemu_cmd=(
+        qemu-system-x86_64
+        -enable-kvm
+        -m "$MEMORY"
+        -smp "$CPUS"
+        -cpu host
+        -drive "file=$IMG_FILE,format=qcow2,if=virtio"
+        -cdrom "$ISO_FILE"
+        -boot order=d
+        -device virtio-net-pci,netdev=n0
+        -netdev "user,id=n0,hostfwd=tcp::3389-:3389"
+    )
+    
+    # Add VirtIO drivers if available
+    if [[ -f "$VIRTIO_DRIVERS" ]]; then
+        qemu_cmd+=(-drive "file=$VIRTIO_DRIVERS,media=cdrom,readonly=on")
+        print_status "WINDOWS" "🚀 VirtIO drivers loaded for better performance"
+    fi
+    
+    # Windows always runs in GUI mode with better graphics
+    qemu_cmd+=(
+        -vga virtio
+        -display gtk,gl=on
+        -usb
+        -device usb-tablet
+        -device usb-kbd
+        -soundhw hda
+        -machine type=pc,accel=kvm
+    )
+    
+    # Add port forwards if specified
+    if [[ -n "$PORT_FORWARDS" ]]; then
+        IFS=',' read -ra forwards <<< "$PORT_FORWARDS"
+        for forward in "${forwards[@]}"; do
+            IFS=':' read -r host_port guest_port <<< "$forward"
+            qemu_cmd+=(-device "virtio-net-pci,netdev=n${#qemu_cmd[@]}")
+            qemu_cmd+=(-netdev "user,id=n${#qemu_cmd[@]},hostfwd=tcp::$host_port-:$guest_port")
+        done
+    fi
+
+    print_status "WINDOWS" "⚡ Starting QEMU with Windows..."
+    echo "📊 Configuration: ${MEMORY}MB RAM, ${CPUS} CPUs, ${DISK_SIZE} disk"
+    echo "💿 Boot device: CD-ROM (Windows ISO)"
+    echo "🖥️  Display: GUI with hardware acceleration"
+    
+    # Important instructions
+    print_status "WINDOWS" "📝 Installation Instructions:"
+    echo "   1. Press any key to boot from CD when prompted"
+    echo "   2. Follow Windows installation wizard"
+    echo "   3. When asked for drivers, select VirtIO drivers from CD"
+    echo "   4. Create user: Administrator (or your preferred username)"
+    echo "   5. Password: Passw0rd! (or your preferred password)"
+    echo "   6. After installation, install VirtIO drivers from CD for best performance"
+    
+    # Start the VM
+    if ! "${qemu_cmd[@]}"; then
+        print_status "ERROR" "❌ Failed to start Windows VM"
+        return 1
+    fi
+    
+    print_status "WINDOWS" "🛑 Windows VM $vm_name has been shut down"
 }
 
 # Function to delete a VM
@@ -573,7 +827,11 @@ delete_vm() {
             sleep 2
         fi
         
+        # Delete all VM files
         rm -f "$IMG_FILE" "$SEED_FILE" "$VM_DIR/$vm_name.conf" "${IMG_FILE}.lock" 2>/dev/null
+        if [[ "$VM_TYPE" == "windows" ]]; then
+            rm -f "$ISO_FILE" "$VIRTIO_DRIVERS" 2>/dev/null
+        fi
         print_status "SUCCESS" "✅ VM '$vm_name' has been deleted"
     fi
 }
@@ -584,13 +842,22 @@ show_vm_info() {
     
     if load_vm_config "$vm_name"; then
         echo
-        print_status "INFO" "📊 VM Information: $vm_name"
+        if [[ "$VM_TYPE" == "windows" ]]; then
+            print_status "WINDOWS" "📊 Windows VM Information: $vm_name"
+        else
+            print_status "INFO" "📊 Linux VM Information: $vm_name"
+        fi
         echo "🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹"
-        echo "🌍 OS: $OS_TYPE"
-        echo "🏷️  Hostname: $HOSTNAME"
+        echo "🌍 OS Type: $OS_TYPE"
+        echo "🏷️  VM Name: $VM_NAME"
+        echo "🏠 Hostname: $HOSTNAME"
         echo "👤 Username: $USERNAME"
         echo "🔑 Password: $PASSWORD"
-        echo "🔌 SSH Port: $SSH_PORT"
+        if [[ "$VM_TYPE" == "linux" ]]; then
+            echo "🔌 SSH Port: $SSH_PORT"
+        else
+            echo "🌐 RDP Port: 3389"
+        fi
         echo "🧠 Memory: $MEMORY MB"
         echo "⚡ CPUs: $CPUS"
         echo "💾 Disk: $DISK_SIZE"
@@ -598,10 +865,15 @@ show_vm_info() {
         echo "🌐 Port Forwards: ${PORT_FORWARDS:-None}"
         echo "📅 Created: $CREATED"
         echo "💿 Image File: $IMG_FILE"
-        echo "🌱 Seed File: $SEED_FILE"
+        if [[ "$VM_TYPE" == "windows" ]]; then
+            echo "📀 ISO File: $ISO_FILE"
+            echo "🚀 VirtIO Drivers: ${VIRTIO_DRIVERS:-Not installed}"
+        else
+            echo "🌱 Seed File: $SEED_FILE"
+        fi
         
         # Show lock status
-        if check_image_lock "$IMG_FILE" "$vm_name" >/dev/null 2>&1; then
+        if [[ -f "$IMG_FILE" ]] && check_image_lock "$IMG_FILE" "$vm_name" >/dev/null 2>&1; then
             echo "🔓 Image Status: Unlocked"
         else
             echo "🔒 Image Status: Locked (possibly in use)"
@@ -615,6 +887,20 @@ show_vm_info() {
         fi
         
         echo "🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹🔹"
+        
+        # Connection instructions
+        if [[ "$VM_TYPE" == "windows" ]] && is_vm_running "$vm_name"; then
+            echo "🖥️  Connect via Remote Desktop:"
+            echo "   Host: localhost"
+            echo "   Port: 3389"
+            echo "   Username: $USERNAME"
+            echo "   Password: $PASSWORD"
+        elif [[ "$VM_TYPE" == "linux" ]] && is_vm_running "$vm_name"; then
+            echo "🔌 Connect via SSH:"
+            echo "   ssh -p $SSH_PORT $USERNAME@localhost"
+            echo "   Password: $PASSWORD"
+        fi
+        
         echo
         read -p "$(print_status "INPUT" "⏎ Press Enter to continue...")"
     fi
@@ -645,7 +931,11 @@ stop_vm() {
     
     if load_vm_config "$vm_name"; then
         if is_vm_running "$vm_name"; then
-            print_status "INFO" "🛑 Stopping VM: $vm_name"
+            if [[ "$VM_TYPE" == "windows" ]]; then
+                print_status "WINDOWS" "🛑 Stopping Windows VM: $vm_name"
+            else
+                print_status "INFO" "🛑 Stopping VM: $vm_name"
+            fi
             
             # Try graceful shutdown first
             pkill -f "qemu-system.*$IMG_FILE"
@@ -684,119 +974,197 @@ edit_vm_config() {
         
         while true; do
             echo "📝 What would you like to edit?"
-            echo "  1) 🏷️  Hostname"
-            echo "  2) 👤 Username"
-            echo "  3) 🔑 Password"
-            echo "  4) 🔌 SSH Port"
-            echo "  5) 🖥️  GUI Mode"
-            echo "  6) 🌐 Port Forwards"
-            echo "  7) 🧠 Memory (RAM)"
-            echo "  8) ⚡ CPU Count"
-            echo "  9) 💾 Disk Size"
-            echo "  0) ↩️  Back to main menu"
+            if [[ "$VM_TYPE" == "windows" ]]; then
+                echo "  1) 🏷️  VM Name"
+                echo "  2) 🧠 Memory (RAM)"
+                echo "  3) ⚡ CPU Count"
+                echo "  4) 💾 Disk Size"
+                echo "  5) 🌐 Port Forwards"
+                echo "  0) ↩️  Back to main menu"
+            else
+                echo "  1) 🏷️  Hostname"
+                echo "  2) 👤 Username"
+                echo "  3) 🔑 Password"
+                echo "  4) 🔌 SSH Port"
+                echo "  5) 🖥️  GUI Mode"
+                echo "  6) 🌐 Port Forwards"
+                echo "  7) 🧠 Memory (RAM)"
+                echo "  8) ⚡ CPU Count"
+                echo "  9) 💾 Disk Size"
+                echo "  0) ↩️  Back to main menu"
+            fi
             
             read -p "$(print_status "INPUT" "🎯 Enter your choice: ")" edit_choice
             
             case $edit_choice in
                 1)
-                    while true; do
-                        read -p "$(print_status "INPUT" "🏷️  Enter new hostname (current: $HOSTNAME): ")" new_hostname
-                        new_hostname="${new_hostname:-$HOSTNAME}"
-                        if validate_input "name" "$new_hostname"; then
-                            HOSTNAME="$new_hostname"
-                            break
-                        fi
-                    done
-                    ;;
-                2)
-                    while true; do
-                        read -p "$(print_status "INPUT" "👤 Enter new username (current: $USERNAME): ")" new_username
-                        new_username="${new_username:-$USERNAME}"
-                        if validate_input "username" "$new_username"; then
-                            USERNAME="$new_username"
-                            break
-                        fi
-                    done
-                    ;;
-                3)
-                    while true; do
-                        read -s -p "$(print_status "INPUT" "🔑 Enter new password (current: ****): ")" new_password
-                        new_password="${new_password:-$PASSWORD}"
-                        echo
-                        if [ -n "$new_password" ]; then
-                            PASSWORD="$new_password"
-                            break
-                        else
-                            print_status "ERROR" "❌ Password cannot be empty"
-                        fi
-                    done
-                    ;;
-                4)
-                    while true; do
-                        read -p "$(print_status "INPUT" "🔌 Enter new SSH port (current: $SSH_PORT): ")" new_ssh_port
-                        new_ssh_port="${new_ssh_port:-$SSH_PORT}"
-                        if validate_input "port" "$new_ssh_port"; then
-                            # Check if port is already in use
-                            if [ "$new_ssh_port" != "$SSH_PORT" ] && ss -tln 2>/dev/null | grep -q ":$new_ssh_port "; then
-                                print_status "ERROR" "🚫 Port $new_ssh_port is already in use"
-                            else
-                                SSH_PORT="$new_ssh_port"
+                    if [[ "$VM_TYPE" == "windows" ]]; then
+                        while true; do
+                            read -p "$(print_status "INPUT" "🏷️  Enter new VM name (current: $VM_NAME): ")" new_vm_name
+                            new_vm_name="${new_vm_name:-$VM_NAME}"
+                            if validate_input "name" "$new_vm_name"; then
+                                if [[ "$new_vm_name" != "$VM_NAME" ]] && [[ -f "$VM_DIR/$new_vm_name.conf" ]]; then
+                                    print_status "ERROR" "⚠️  VM with name '$new_vm_name' already exists"
+                                else
+                                    # Rename files
+                                    mv "$VM_DIR/$VM_NAME.conf" "$VM_DIR/$new_vm_name.conf" 2>/dev/null
+                                    mv "$IMG_FILE" "$VM_DIR/$new_vm_name.img" 2>/dev/null
+                                    if [[ -f "$ISO_FILE" ]]; then
+                                        mv "$ISO_FILE" "$VM_DIR/$new_vm_name.iso" 2>/dev/null
+                                    fi
+                                    VM_NAME="$new_vm_name"
+                                    IMG_FILE="$VM_DIR/$VM_NAME.img"
+                                    ISO_FILE="$VM_DIR/$VM_NAME.iso"
+                                    break
+                                fi
+                            fi
+                        done
+                    else
+                        while true; do
+                            read -p "$(print_status "INPUT" "🏷️  Enter new hostname (current: $HOSTNAME): ")" new_hostname
+                            new_hostname="${new_hostname:-$HOSTNAME}"
+                            if validate_input "name" "$new_hostname"; then
+                                HOSTNAME="$new_hostname"
                                 break
                             fi
-                        fi
-                    done
+                        done
+                    fi
+                    ;;
+                2)
+                    if [[ "$VM_TYPE" == "windows" ]]; then
+                        while true; do
+                            read -p "$(print_status "INPUT" "🧠 Enter new memory in MB (current: $MEMORY): ")" new_memory
+                            new_memory="${new_memory:-$MEMORY}"
+                            if validate_input "number" "$new_memory"; then
+                                MEMORY="$new_memory"
+                                break
+                            fi
+                        done
+                    else
+                        while true; do
+                            read -p "$(print_status "INPUT" "👤 Enter new username (current: $USERNAME): ")" new_username
+                            new_username="${new_username:-$USERNAME}"
+                            if validate_input "username" "$new_username"; then
+                                USERNAME="$new_username"
+                                break
+                            fi
+                        done
+                    fi
+                    ;;
+                3)
+                    if [[ "$VM_TYPE" == "windows" ]]; then
+                        while true; do
+                            read -p "$(print_status "INPUT" "⚡ Enter new CPU count (current: $CPUS): ")" new_cpus
+                            new_cpus="${new_cpus:-$CPUS}"
+                            if validate_input "number" "$new_cpus"; then
+                                CPUS="$new_cpus"
+                                break
+                            fi
+                        done
+                    else
+                        while true; do
+                            read -s -p "$(print_status "INPUT" "🔑 Enter new password (current: ****): ")" new_password
+                            new_password="${new_password:-$PASSWORD}"
+                            echo
+                            if [ -n "$new_password" ]; then
+                                PASSWORD="$new_password"
+                                break
+                            else
+                                print_status "ERROR" "❌ Password cannot be empty"
+                            fi
+                        done
+                    fi
+                    ;;
+                4)
+                    if [[ "$VM_TYPE" == "windows" ]]; then
+                        while true; do
+                            read -p "$(print_status "INPUT" "💾 Enter new disk size (current: $DISK_SIZE): ")" new_disk_size
+                            new_disk_size="${new_disk_size:-$DISK_SIZE}"
+                            if validate_input "size" "$new_disk_size"; then
+                                DISK_SIZE="$new_disk_size"
+                                break
+                            fi
+                        done
+                    else
+                        while true; do
+                            read -p "$(print_status "INPUT" "🔌 Enter new SSH port (current: $SSH_PORT): ")" new_ssh_port
+                            new_ssh_port="${new_ssh_port:-$SSH_PORT}"
+                            if validate_input "port" "$new_ssh_port"; then
+                                # Check if port is already in use
+                                if [ "$new_ssh_port" != "$SSH_PORT" ] && ss -tln 2>/dev/null | grep -q ":$new_ssh_port "; then
+                                    print_status "ERROR" "🚫 Port $new_ssh_port is already in use"
+                                else
+                                    SSH_PORT="$new_ssh_port"
+                                    break
+                                fi
+                            fi
+                        done
+                    fi
                     ;;
                 5)
-                    while true; do
-                        read -p "$(print_status "INPUT" "🖥️  Enable GUI mode? (y/n, current: $GUI_MODE): ")" gui_input
-                        gui_input="${gui_input:-}"
-                        if [[ "$gui_input" =~ ^[Yy]$ ]]; then 
-                            GUI_MODE=true
-                            break
-                        elif [[ "$gui_input" =~ ^[Nn]$ ]]; then
-                            GUI_MODE=false
-                            break
-                        elif [ -z "$gui_input" ]; then
-                            # Keep current value if user just pressed Enter
-                            break
-                        else
-                            print_status "ERROR" "❌ Please answer y or n"
-                        fi
-                    done
+                    if [[ "$VM_TYPE" == "windows" ]]; then
+                        read -p "$(print_status "INPUT" "🌐 Additional port forwards (current: ${PORT_FORWARDS:-3389:3389}): ")" new_port_forwards
+                        PORT_FORWARDS="${new_port_forwards:-$PORT_FORWARDS}"
+                    else
+                        while true; do
+                            read -p "$(print_status "INPUT" "🖥️  Enable GUI mode? (y/n, current: $GUI_MODE): ")" gui_input
+                            gui_input="${gui_input:-}"
+                            if [[ "$gui_input" =~ ^[Yy]$ ]]; then 
+                                GUI_MODE=true
+                                break
+                            elif [[ "$gui_input" =~ ^[Nn]$ ]]; then
+                                GUI_MODE=false
+                                break
+                            elif [ -z "$gui_input" ]; then
+                                # Keep current value if user just pressed Enter
+                                break
+                            else
+                                print_status "ERROR" "❌ Please answer y or n"
+                            fi
+                        done
+                    fi
                     ;;
                 6)
-                    read -p "$(print_status "INPUT" "🌐 Additional port forwards (current: ${PORT_FORWARDS:-None}): ")" new_port_forwards
-                    PORT_FORWARDS="${new_port_forwards:-$PORT_FORWARDS}"
+                    if [[ "$VM_TYPE" != "windows" ]]; then
+                        read -p "$(print_status "INPUT" "🌐 Additional port forwards (current: ${PORT_FORWARDS:-None}): ")" new_port_forwards
+                        PORT_FORWARDS="${new_port_forwards:-$PORT_FORWARDS}"
+                    fi
                     ;;
                 7)
-                    while true; do
-                        read -p "$(print_status "INPUT" "🧠 Enter new memory in MB (current: $MEMORY): ")" new_memory
-                        new_memory="${new_memory:-$MEMORY}"
-                        if validate_input "number" "$new_memory"; then
-                            MEMORY="$new_memory"
-                            break
-                        fi
-                    done
+                    if [[ "$VM_TYPE" != "windows" ]]; then
+                        while true; do
+                            read -p "$(print_status "INPUT" "🧠 Enter new memory in MB (current: $MEMORY): ")" new_memory
+                            new_memory="${new_memory:-$MEMORY}"
+                            if validate_input "number" "$new_memory"; then
+                                MEMORY="$new_memory"
+                                break
+                            fi
+                        done
+                    fi
                     ;;
                 8)
-                    while true; do
-                        read -p "$(print_status "INPUT" "⚡ Enter new CPU count (current: $CPUS): ")" new_cpus
-                        new_cpus="${new_cpus:-$CPUS}"
-                        if validate_input "number" "$new_cpus"; then
-                            CPUS="$new_cpus"
-                            break
-                        fi
-                    done
+                    if [[ "$VM_TYPE" != "windows" ]]; then
+                        while true; do
+                            read -p "$(print_status "INPUT" "⚡ Enter new CPU count (current: $CPUS): ")" new_cpus
+                            new_cpus="${new_cpus:-$CPUS}"
+                            if validate_input "number" "$new_cpus"; then
+                                CPUS="$new_cpus"
+                                break
+                            fi
+                        done
+                    fi
                     ;;
                 9)
-                    while true; do
-                        read -p "$(print_status "INPUT" "💾 Enter new disk size (current: $DISK_SIZE): ")" new_disk_size
-                        new_disk_size="${new_disk_size:-$DISK_SIZE}"
-                        if validate_input "size" "$new_disk_size"; then
-                            DISK_SIZE="$new_disk_size"
-                            break
-                        fi
-                    done
+                    if [[ "$VM_TYPE" != "windows" ]]; then
+                        while true; do
+                            read -p "$(print_status "INPUT" "💾 Enter new disk size (current: $DISK_SIZE): ")" new_disk_size
+                            new_disk_size="${new_disk_size:-$DISK_SIZE}"
+                            if validate_input "size" "$new_disk_size"; then
+                                DISK_SIZE="$new_disk_size"
+                                break
+                            fi
+                        done
+                    fi
                     ;;
                 0)
                     return 0
@@ -807,8 +1175,8 @@ edit_vm_config() {
                     ;;
             esac
             
-            # Recreate seed image with new configuration if user/password/hostname changed
-            if [[ "$edit_choice" -eq 1 || "$edit_choice" -eq 2 || "$edit_choice" -eq 3 ]]; then
+            # Recreate seed image with new configuration for Linux VMs
+            if [[ "$VM_TYPE" == "linux" ]] && [[ "$edit_choice" -eq 1 || "$edit_choice" -eq 2 || "$edit_choice" -eq 3 ]]; then
                 print_status "INFO" "🔄 Updating cloud-init configuration..."
                 setup_vm_image
             fi
@@ -931,9 +1299,15 @@ fix_vm_issues() {
         
         echo "🔧 Select issue to fix:"
         echo "  1) 🔓 Remove lock files"
-        echo "  2) 🗑️  Recreate seed image"
+        if [[ "$VM_TYPE" == "linux" ]]; then
+            echo "  2) 🗑️  Recreate seed image"
+        fi
         echo "  3) 🔄 Recreate configuration"
         echo "  4) 💀 Kill stuck processes"
+        if [[ "$VM_TYPE" == "windows" ]]; then
+            echo "  5) 🔄 Redownload Windows ISO"
+            echo "  6) 🔄 Redownload VirtIO drivers"
+        fi
         echo "  0) ↩️  Back"
         
         read -p "$(print_status "INPUT" "🎯 Enter your choice: ")" fix_choice
@@ -946,12 +1320,14 @@ fix_vm_issues() {
                 print_status "SUCCESS" "✅ Lock files removed"
                 ;;
             2)
-                print_status "INFO" "🔄 Recreating seed image..."
-                if [[ -f "$SEED_FILE" ]]; then
-                    rm -f "$SEED_FILE"
+                if [[ "$VM_TYPE" == "linux" ]]; then
+                    print_status "INFO" "🔄 Recreating seed image..."
+                    if [[ -f "$SEED_FILE" ]]; then
+                        rm -f "$SEED_FILE"
+                    fi
+                    setup_vm_image
+                    print_status "SUCCESS" "✅ Seed image recreated"
                 fi
-                setup_vm_image
-                print_status "SUCCESS" "✅ Seed image recreated"
                 ;;
             3)
                 print_status "INFO" "🔄 Recreating configuration..."
@@ -967,6 +1343,26 @@ fix_vm_issues() {
                     print_status "SUCCESS" "✅ Forcefully killed stuck processes"
                 else
                     print_status "INFO" "💤 No stuck processes found"
+                fi
+                ;;
+            5)
+                if [[ "$VM_TYPE" == "windows" ]]; then
+                    print_status "WINDOWS" "🔄 Redownloading Windows ISO..."
+                    if [[ -f "$ISO_FILE" ]]; then
+                        rm -f "$ISO_FILE"
+                    fi
+                    setup_vm_image
+                    print_status "SUCCESS" "✅ Windows ISO redownloaded"
+                fi
+                ;;
+            6)
+                if [[ "$VM_TYPE" == "windows" ]]; then
+                    print_status "WINDOWS" "🔄 Redownloading VirtIO drivers..."
+                    if [[ -f "$VIRTIO_DRIVERS" ]]; then
+                        rm -f "$VIRTIO_DRIVERS"
+                    fi
+                    setup_vm_image
+                    print_status "SUCCESS" "✅ VirtIO drivers redownloaded"
                 fi
                 ;;
             0)
@@ -989,30 +1385,43 @@ show_help() {
 Quick Start:
 1. Create a new VM with option 1
 2. Start the VM with option 2
-3. SSH using: ssh -p <port> <username>@localhost
+3. Connect using appropriate method
 
-Common Ports:
-- Ubuntu/Debian: ssh ubuntu@localhost -p 2222 (password: ubuntu)
-- CentOS/Rocky: ssh centos@localhost -p 2222 (password: centos)
-- Fedora: ssh fedora@localhost -p 2222 (password: fedora)
+Linux VMs:
+• SSH: ssh -p <port> <username>@localhost
+• Common ports: Ubuntu/Debian: 2222
+• Username/Password: As set during creation
+
+Windows 10 VM:
+• Remote Desktop: localhost:3389
+• Default: Administrator / Passw0rd!
+• Requires Windows installation on first run
 
 Key Features:
 • Create, start, stop, delete VMs
+• Support for Linux and Windows 10
 • Edit VM configuration
 • Resize disk on the fly
 • Monitor performance
 • Fix common issues
 • Both GUI and console modes
 
+Windows Notes:
+• First boot installs Windows (takes 15-30 mins)
+• VirtIO drivers for better performance
+• RDP enabled for remote access
+• 3.5GB ISO download required
+
 Tips:
 • Use Ctrl+A then X to exit QEMU console
 • VMs are stored in: $VM_DIR
-• Configuration files: $VM_DIR/*.conf
+• Windows ISO stored in same directory
 
 Troubleshooting:
 • If VM won't start: Check 'Fix VM issues'
 • If port in use: Change SSH port
 • If out of space: Resize disk
+• Windows slow? Increase RAM/CPUs
 EOF
     read -p "$(print_status "INPUT" "⏎ Press Enter to continue...")"
 }
@@ -1165,8 +1574,17 @@ check_dependencies
 VM_DIR="${VM_DIR:-$HOME/vms}"
 mkdir -p "$VM_DIR"
 
-# Supported OS list - UPDATED WITH DEBIAN 13
+# Default settings for different VM types
+linux_DISK_DEFAULT="20G"
+linux_MEMORY_DEFAULT="2048"
+linux_CPUS_DEFAULT="2"
+windows_DISK_DEFAULT="64G"
+windows_MEMORY_DEFAULT="4096"
+windows_CPUS_DEFAULT="4"
+
+# Supported OS list - NOW WITH WINDOWS 10!
 declare -A OS_OPTIONS=(
+    ["Windows 10 Lite Edition"]="windows|10lite|https://archive.org/download/windows-10-lite-edition-19h2-x64/Windows%2010%20Lite%20Edition%2019H2%20x64.iso|win10|Administrator|Passw0rd!"
     ["Ubuntu 22.04"]="ubuntu|jammy|https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img|ubuntu22|ubuntu|ubuntu"
     ["Ubuntu 24.04"]="ubuntu|noble|https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img|ubuntu24|ubuntu|ubuntu"
     ["Debian 11"]="debian|bullseye|https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-generic-amd64.qcow2|debian11|debian|debian"
