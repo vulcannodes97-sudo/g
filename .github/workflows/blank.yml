@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: Debian 12
+    runs-on: [self-hosted, linux, debian-12]  # Requires self-hosted runner
 
     env:
       TZ: America/Argentina/Buenos_Aires
