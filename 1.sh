@@ -9,9 +9,9 @@ cd /var/www/convoy
 curl -Lo panel.tar.gz https://github.com/convoypanel/panel/releases/latest/download/panel.tar.gz
 tar -xzvf panel.tar.gz
 chmod -R o+w storage/* bootstrap/cache/
-DB_NAME=panel
-DB_USER=pterodactyl
-DB_PASS=yourPassword
+DB_NAME=convoy
+DB_USER=convoy
+DB_PASS=convoy
 mariadb -e "CREATE USER '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${DB_PASS}';"
 mariadb -e "CREATE DATABASE ${DB_NAME};"
 mariadb -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'127.0.0.1' WITH GRANT OPTION;"
