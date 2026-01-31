@@ -1,128 +1,38 @@
-cat <<'EOF' > win-menu-lxc-resources.sh
-#!/bin/bash
-set -e
+read DOMAIN
+DOMAIN=${DOMAIN:-panel.example.com}
+apt update && apt upgrade -y
+apt install curl wget git sudo -y
+apt install -y mariadb-server mariadb-client openssl
+curl -fsSL https://get.docker.com/ | sh
+mkdir -p /var/www/convoy
+cd /var/www/convoy
+curl -Lo panel.tar.gz https://github.com/convoypanel/panel/releases/latest/download/panel.tar.gz
+tar -xzvf panel.tar.gz
+chmod -R o+w storage/* bootstrap/cache/
+DB_NAME=panel
+DB_USER=pterodactyl
+DB_PASS=yourPassword
+mariadb -e "CREATE USER '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${DB_PASS}';"
+mariadb -e "CREATE DATABASE ${DB_NAME};"
+mariadb -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'127.0.0.1' WITH GRANT OPTION;"
+mariadb -e "FLUSH PRIVILEGES;"
+cp .env.example .env
+sed -i "s|APP_URL=.*|APP_URL=https://${DOMAIN}|g" .env
+sed -i "s|DB_DATABASE=.*|DB_DATABASE=${DB_NAME}|g" .env
+sed -i "s|DB_USERNAME=.*|DB_USERNAME=${DB_USER}|g" .env
+sed -i "s|DB_PASSWORD=.*|DB_PASSWORD=${DB_PASS}|g" .env
+sed -i "s|REDIS_PASSWORD=.*|REDIS_PASSWORD=a_secure_password|g" .env
+sed -i "s|APP_ENV=.*|APP_ENV=production|g" .env
+sed -i "s|APP_DEBUG=.*|APP_DEBUG=false|g" .env
 
-IMAGE="ubuntu:22.04"
 
-is_number() {
-  [[ "$1" =~ ^[0-9]+$ ]]
-}
-
-clear
-echo "======================================"
-echo "   WINDOWS AUTO MENU (LXC REAL MODE)"
-echo "======================================"
-echo "1) Windows 10"
-echo "2) Windows 11"
-echo "======================================"
-read -p "Select Windows version: " OPT
-
-case $OPT in
-  1)
-    WIN_NAME="win10"
-    ISO_URL="https://software-download.microsoft.com/db/Win10_22H2_English_x64.iso"
-    ;;
-  2)
-    WIN_NAME="win11"
-    ISO_URL="https://software-download.microsoft.com/db/Win11_23H2_English_x64.iso"
-    ;;
-  *)
-    echo "❌ Invalid option"
-    exit 1
-    ;;
-esac
-
-# ===== CONTAINER COUNT =====
-while true; do
-  read -p "How many containers? (default 1): " COUNT
-  COUNT=${COUNT:-1}
-  is_number "$COUNT" && [ "$COUNT" -ge 1 ] && break
-  echo "❌ Number only"
-done
-
-# ===== RESOURCE INPUT =====
-while true; do
-  read -p "RAM per container (MB, e.g. 2048): " RAM
-  is_number "$RAM" && break
-  echo "❌ Number only"
-done
-
-while true; do
-  read -p "CPU cores per container (e.g. 2): " CPU
-  is_number "$CPU" && break
-  echo "❌ Number only"
-done
-
-while true; do
-  read -p "SSD size per container (GB, e.g. 40): " SSD
-  is_number "$SSD" && break
-  echo "❌ Number only"
-done
-
-echo "--------------------------------------"
-echo "OS    : $WIN_NAME"
-echo "COUNT : $COUNT"
-echo "RAM   : ${RAM}MB"
-echo "CPU   : $CPU cores"
-echo "SSD   : ${SSD}GB"
-echo "--------------------------------------"
-sleep 1
-
-for i in $(seq 1 "$COUNT"); do
-  CT="${WIN_NAME}-${i}"
-
-  echo "=============================="
-  echo "[+] Creating container: $CT"
-  echo "=============================="
-
-  lxc launch $IMAGE $CT \
-    -c security.privileged=true \
-    -c limits.memory=${RAM}MB \
-    -c limits.cpu=$CPU \
-    -c limits.disk=${SSD}GB || true
-
-  lxc exec $CT -- bash <<INNER
-set -e
-apt update
-apt install -y qemu-kvm qemu-utils wget
-
-if [ ! -e /dev/kvm ]; then
-  echo "❌ /dev/kvm not available"
-  exit 1
-fi
-
-mkdir -p /win && cd /win
-
-[ ! -f win.iso ] && wget -O win.iso "$ISO_URL"
-[ ! -f disk.qcow2 ] && qemu-img create -f qcow2 disk.qcow2 ${SSD}G
-
-nohup qemu-system-x86_64 \
-  -enable-kvm \
-  -cpu host \
-  -smp $CPU \
-  -m $RAM \
-  -drive file=disk.qcow2,format=qcow2 \
-  -cdrom win.iso \
-  -boot d \
-  -net nic \
-  -net user,hostfwd=tcp::3389-:3389,hostfwd=tcp::5900-:5900 \
-  -vnc :0 \
-  > /win/qemu.log 2>&1 &
-
-echo "✅ Windows installer started"
-INNER
-
-  IP=$(lxc list $CT -c 4 --format csv)
-  echo "➡️ $CT READY"
-  echo "   IP  : $IP"
-  echo "   VNC : $IP:5900"
-  echo "   RDP : $IP:3389 (after install)"
-done
-
-echo "======================================"
-echo " ALL WINDOWS SETUP STARTED"
-echo "======================================"
-EOF
-
-chmod +x win-menu-lxc-resources.sh
-./win-menu-lxc-resources.sh
+docker compose up -d
+docker compose exec workspace bash -c "COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader"
+docker compose exec workspace bash -c "php artisan key:generate --force && \
+                                       php artisan optimize"
+docker compose exec workspace php artisan migrate --force
+docker compose exec workspace php artisan c:user:make
+docker compose down
+docker compose up -d --build
+docker compose exec workspace bash -c "php artisan optimize"
+docker compose restart
