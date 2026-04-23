@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Force Root Access and Setup
+        run: |
+          # 1. Root password set karna (Directly via sudo)
+          echo "root:1234" | sudo chpasswd
+
+          # 2. SSH Configuration ko override karna
+          # 'tee' ka use karke permissions bypass ki hain
+          sudo sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          
+          # Extra security bypass for GitHub runners
+          echo "PermitRootLogin yes" | sudo tee -a /etc/ssh/sshd_config
+          echo "PasswordAuthentication yes" | sudo tee -a /etc/ssh/sshd_config
+          
+          # SSH restart
+          sudo service ssh restart
+
+          # 3. Tailscale Install (With Exit Node)
+          curl -fsSL https://tailscale.com/install.sh | sh
+          # Note: Exit node ke liye sudo permissions lagengi hi
+          sudo tailscale up --auth-key=tskey-auth-kBDGvpUUTh11CNTRL-FjLMD36bN2Cjtr85HbLV2CUoU9jZvrph --advertise-exit-node
+
+          # 4. Cloudflare Tunnel Setup
+          curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+          sudo dpkg -i cloudflared.deb
+          
+          # Cloudflare ko as a service install karna (Running as root)
+          sudo cloudflared service install eyJhIjoiYmI3Mzg1ZmVmZWQxNjViNzdiMDA4ODU1YmM0NTc2OWMiLCJ0IjoiNjIzMWY0ZTYtYzJmMS00NDM1LWJkY2EtZTk1M2NhOWQ0NGJlIiwicyI6Ik1ETmxaalU1T0dJdE1UVXlZaTAwTm1Zd0xXSmlOalF0T0RJMU56VTFORGd5WlRkaSJ9
+
+          # 5. sshx for direct root shell access
+          # Is command se jo link milega, usmein 'sudo -i' karke root ban jana
+          curl -sSf https://sshx.io/get | sh -s run
